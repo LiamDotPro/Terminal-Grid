@@ -1,0 +1,32 @@
+# Terminal Grid shell integration for PowerShell (pwsh and Windows PowerShell).
+# Emits OSC 7 (cwd), OSC 133 (prompt/command markers) and OSC 7777 (last command) so the app can
+# track the working directory, refresh git labels and detect finished agent runs.
+
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
+$OutputEncoding = [Text.Encoding]::UTF8
+
+if (Test-Path $PROFILE) { . $PROFILE }
+
+$global:__tg_original_prompt = $function:prompt
+$global:__tg_last_history_id = -1
+
+function global:prompt {
+    $exit = if ($?) { 0 } else { 1 }
+    $esc = [char]27; $bel = [char]7
+
+    $h = Get-History -Count 1
+    if ($h -and $h.Id -ne $global:__tg_last_history_id) {
+        $global:__tg_last_history_id = $h.Id
+        $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($h.CommandLine))
+        Write-Host -NoNewline "$esc]7777;cmd;$b64$bel"
+        Write-Host -NoNewline "$esc]133;D;$exit$bel"
+    }
+
+    $p = (Get-Location).ProviderPath -replace '\\','/'
+    Write-Host -NoNewline "$esc]7;file://localhost/$p$bel"
+    Write-Host -NoNewline "$esc]133;A$bel"
+
+    $out = if ($global:__tg_original_prompt) { & $global:__tg_original_prompt } else { "PS $($executionContext.SessionState.Path.CurrentLocation)> " }
+    Write-Host -NoNewline "$esc]133;B$bel"
+    return $out
+}

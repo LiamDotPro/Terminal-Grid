@@ -1,0 +1,327 @@
+@import "@fontsource/geist-sans/latin-400.css";
+@import "@fontsource/geist-sans/latin-500.css";
+@import "@fontsource/geist-sans/latin-600.css";
+@import "@fontsource/geist-sans/latin-700.css";
+@import "@fontsource/jetbrains-mono/latin-400.css";
+@import "@fontsource/jetbrains-mono/latin-500.css";
+@import "@fontsource/jetbrains-mono/latin-600.css";
+@import "@xterm/xterm/css/xterm.css";
+@import "./styles/tokens.css";
+@import "./styles/chrome.css";
+@import "./styles/pane.css";
+@import "./styles/notes.css";
+@import "./styles/overlays.css";
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg-root);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  overflow: hidden;
+  /* The window chrome is drawn by the app, so nothing should rubber band. */
+  overscroll-behavior: none;
+  user-select: none;
+  cursor: default;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--accent-bright);
+  text-decoration: underline;
+}
+
+code,
+kbd,
+pre {
+  font-family: var(--font-mono);
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+  user-select: text;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Scrollbars ---------------------------------------------------------- */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.28);
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* App shell ----------------------------------------------------------- */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-app);
+  background-attachment: fixed;
+}
+
+.app__body {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Shared primitives --------------------------------------------------- */
+
+.glass {
+  background: var(--glass-panel);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--edge);
+  box-shadow: var(--shadow-panel);
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--hair);
+  background: var(--header-wash);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.ellipsis {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spacer {
+  flex: 1;
+  min-width: 0;
+}
+
+.kbd {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text-strong);
+  white-space: nowrap;
+}
+
+/* Buttons ------------------------------------------------------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+  border-radius: 9px;
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.btn--quiet {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-70);
+  font-size: 12px;
+  border-radius: 8px;
+}
+
+.btn--quiet:hover {
+  background: var(--fill-hover);
+  color: var(--text-strong);
+}
+
+.btn--outline {
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--text-85);
+  font-size: 12.5px;
+}
+
+.btn--outline:hover {
+  background: var(--fill-hover);
+}
+
+.btn--primary {
+  height: 32px;
+  padding: 0 16px;
+  background: var(--fill-5);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.btn--primary:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.btn--icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  color: var(--text-50);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.btn--icon:hover {
+  background: var(--fill-hover);
+  color: var(--text-strong);
+}
+
+/* Field controls ------------------------------------------------------ */
+
+.field {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px 0 12px;
+  border-radius: 9px;
+  background: var(--fill-2);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-85);
+}
+
+.field:focus-within {
+  border-color: rgba(141, 220, 255, 0.55);
+}
+
+.field > input,
+.field > select {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  outline: none;
+  font: inherit;
+  color: inherit;
+}
+
+.field > select {
+  appearance: none;
+  cursor: pointer;
+}
+
+.field > select option {
+  background: #14161f;
+  color: var(--text);
+}
+
+.field__chevron {
+  font-size: 10px;
+  color: var(--text-50);
+  pointer-events: none;
+}
+
+/* Tab views. Both stay mounted so PTYs keep streaming and xterm keeps its
+   scrollback (design section 1, requirement 9). */
+
+.view {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  visibility: hidden;
+  pointer-events: none;
+  /* A backdrop-filter inside a visibility:hidden subtree still filters the
+     backdrop in Chromium, which ghosts the inactive tab through the active
+     one. Parking it off-screen keeps the box the same size, so FitAddon can
+     still measure the terminals on the hidden tab. */
+  transform: translateX(-200vw);
+}
+
+.view--active {
+  visibility: visible;
+  pointer-events: auto;
+  transform: none;
+}
+
+.pane__surface {
+  width: 100%;
+  height: 100%;
+}

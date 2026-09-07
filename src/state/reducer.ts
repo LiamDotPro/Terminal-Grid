@@ -1,0 +1,493 @@
+/**
+ * The single application reducer. Everything the UI renders is derived from
+ * this state; async work lives in AppProvider and only ever dispatches here.
+ */
+import { PAGE_SIZE, layoutFor, moveTerminal, pageCount, pageOf, pageSlice } from "../ipc/layout";
+import type { Direction } from "../ipc/layout";
+import type {
+  AgentEvent,
+  Config,
+  GitInfo,
+  NoteNode,
+  Session,
+  TerminalId,
+  TerminalInfo,
+} from "../ipc/types";
+import type { TerminalState } from "./model";
+
+export const DEFAULT_CONFIG: Config = {
+  version: 1,
+  shell: null,
+  shellArgs: [],
+  notesRoot: null,
+  agentPatterns: ["claude", "codex", "gemini", "aider", "gpt", "copilot"],
+  idleTimeoutMs: 4000,
+  hotkeyModifier: "ctrl+alt",
+  fontFamily: null,
+  fontSize: 14,
+  scrollback: 10000,
+  restoreSessionOnLaunch: true,
+};
+
+export type SaveState = "clean" | "dirty" | "saving" | "saved" | "error";
+
+export interface NotesState {
+  root: string | null;
+  tree: NoteNode[];
+  expanded: string[];
+  openPath: string | null;
+  content: string;
+  /** Content as it exists on disk, used to decide whether the buffer is dirty. */
+  baseline: string;
+  mtimeMs: number | null;
+  saveState: SaveState;
+  /** Set when the open file changed on disk while the buffer was dirty. */
+  conflict: { currentMtimeMs: number } | null;
+  loading: boolean;
+}
+
+export interface AppState {
+  ready: boolean;
+  config: Config;
+  activeTab: "terminals" | "notes";
+  order: TerminalId[];
+  terminals: Record<TerminalId, TerminalState>;
+  focusedId: TerminalId | null;
+  page: number;
+  notes: NotesState;
+  settingsOpen: boolean;
+  hotkeysOpen: boolean;
+  busy: boolean;
+  error: string | null;
+  /** Wall clock, advanced by a 1 s tick while the window is visible. */
+  now: number;
+}
+
+export const initialState: AppState = {
+  ready: false,
+  config: DEFAULT_CONFIG,
+  activeTab: "terminals",
+  order: [],
+  terminals: {},
+  focusedId: null,
+  page: 0,
+  notes: {
+    root: null,
+    tree: [],
+    expanded: [],
+    openPath: null,
+    content: "",
+    baseline: "",
+    mtimeMs: null,
+    saveState: "clean",
+    conflict: null,
+    loading: false,
+  },
+  settingsOpen: false,
+  hotkeysOpen: false,
+  busy: false,
+  error: null,
+  now: Date.now(),
+};
+
+export type Action =
+  | { type: "ready"; config: Config; session: Session | null }
+  | { type: "config/set"; config: Config }
+  | { type: "tab/set"; tab: "terminals" | "notes" }
+  | { type: "tab/toggle" }
+  | { type: "page/set"; page: number }
+  | { type: "page/step"; delta: -1 | 1 }
+  | { type: "ui/settings"; open: boolean }
+  | { type: "ui/hotkeys"; open: boolean }
+  | { type: "ui/busy"; busy: boolean }
+  | { type: "ui/error"; message: string | null }
+  | { type: "tick"; now: number; activity: Record<TerminalId, number> }
+  | { type: "terminal/added"; info: TerminalInfo; focus: boolean }
+  | { type: "terminal/restored"; infos: TerminalInfo[]; focusedId: TerminalId | null; page: number }
+  | { type: "terminal/removed"; id: TerminalId }
+  | { type: "terminal/restarted"; info: TerminalInfo }
+  | { type: "terminal/exited"; id: TerminalId; code: number | null }
+  | { type: "terminal/cwd"; id: TerminalId; cwd: string }
+  | { type: "terminal/git"; id: TerminalId; info: GitInfo }
+  | { type: "terminal/agent"; event: AgentEvent }
+  | { type: "terminal/stats"; id: TerminalId; cpuPercent: number; memBytes: number }
+  | { type: "terminal/command"; id: TerminalId; command: string }
+  | { type: "terminal/focus"; id: TerminalId | null }
+  | { type: "terminal/focus-index"; index: number }
+  | { type: "terminal/move"; dir: Direction }
+  | { type: "terminal/move-focus"; dir: Direction }
+  | { type: "notes/root"; root: string }
+  | { type: "notes/tree"; tree: NoteNode[] }
+  | { type: "notes/toggle-folder"; relPath: string }
+  | { type: "notes/opening"; relPath: string }
+  | { type: "notes/opened"; relPath: string; content: string; mtimeMs: number }
+  | { type: "notes/closed" }
+  | { type: "notes/edit"; content: string }
+  | { type: "notes/saving" }
+  | { type: "notes/saved"; mtimeMs: number; content: string }
+  | { type: "notes/save-failed" }
+  | { type: "notes/conflict"; currentMtimeMs: number }
+  | { type: "notes/conflict-dismissed" };
+
+export function reducer(state: AppState, action: Action): AppState {
+  switch (action.type) {
+    case "ready": {
+      const session = action.session;
+      return {
+        ...state,
+        ready: true,
+        config: action.config,
+        activeTab: session?.activeTab ?? state.activeTab,
+        notes: {
+          ...state.notes,
+          expanded: session?.notes.expandedFolders ?? [],
+          openPath: session?.notes.openRelPath ?? null,
+        },
+      };
+    }
+
+    case "config/set":
+      return { ...state, config: action.config };
+
+    case "tab/set":
+      return { ...state, activeTab: action.tab, hotkeysOpen: false };
+
+    case "tab/toggle":
+      return {
+        ...state,
+        activeTab: state.activeTab === "terminals" ? "notes" : "terminals",
+        hotkeysOpen: false,
+      };
+
+    case "page/set":
+      return { ...state, page: clampPage(action.page, state.order.length) };
+
+    case "page/step":
+      return { ...state, page: clampPage(state.page + action.delta, state.order.length) };
+
+    case "ui/settings":
+      return { ...state, settingsOpen: action.open, hotkeysOpen: false };
+
+    case "ui/hotkeys":
+      return { ...state, hotkeysOpen: action.open };
+
+    case "ui/busy":
+      return { ...state, busy: action.busy };
+
+    case "ui/error":
+      return { ...state, error: action.message };
+
+    case "tick": {
+      let terminals = state.terminals;
+      for (const [id, at] of Object.entries(action.activity)) {
+        const term = terminals[id];
+        if (!term || term.lastOutputAt >= at) continue;
+        if (terminals === state.terminals) terminals = { ...terminals };
+        terminals[id] = { ...term, lastOutputAt: at };
+      }
+      return { ...state, now: action.now, terminals };
+    }
+
+    case "terminal/added": {
+      const order = [...state.order, action.info.id];
+      return {
+        ...state,
+        order,
+        terminals: { ...state.terminals, [action.info.id]: newTerminal(action.info, state.now) },
+        focusedId: action.focus ? action.info.id : state.focusedId,
+        page: action.focus ? pageOf(order.length - 1) : clampPage(state.page, order.length),
+      };
+    }
+
+    case "terminal/restored": {
+      const terminals: Record<TerminalId, TerminalState> = { ...state.terminals };
+      for (const info of action.infos) terminals[info.id] = newTerminal(info, state.now);
+      const order = [...state.order, ...action.infos.map((info) => info.id)];
+      const focusedId =
+        action.focusedId && terminals[action.focusedId] ? action.focusedId : (order[0] ?? null);
+      return { ...state, order, terminals, focusedId, page: clampPage(action.page, order.length) };
+    }
+
+    case "terminal/removed": {
+      const index = state.order.indexOf(action.id);
+      if (index === -1) return state;
+      const order = state.order.filter((id) => id !== action.id);
+      const terminals = { ...state.terminals };
+      delete terminals[action.id];
+      const focusedId =
+        state.focusedId === action.id
+          ? (order[Math.min(index, order.length - 1)] ?? null)
+          : state.focusedId;
+      return { ...state, order, terminals, focusedId, page: clampPage(state.page, order.length) };
+    }
+
+    case "terminal/restarted": {
+      const previous = state.terminals[action.info.id];
+      if (!previous) return state;
+      return {
+        ...state,
+        terminals: {
+          ...state.terminals,
+          [action.info.id]: { ...newTerminal(action.info, state.now), git: previous.git },
+        },
+      };
+    }
+
+    case "terminal/exited":
+      return patchTerminal(state, action.id, (term) => ({
+        ...term,
+        info: { ...term.info, exited: true, exitCode: action.code },
+        agent: null,
+        finished: null,
+        stats: null,
+      }));
+
+    case "terminal/cwd":
+      return patchTerminal(state, action.id, (term) => ({
+        ...term,
+        info: { ...term.info, cwd: action.cwd },
+      }));
+
+    case "terminal/git":
+      return patchTerminal(state, action.id, (term) => ({ ...term, git: action.info }));
+
+    case "terminal/agent": {
+      const { id, event, name, durationMs } = action.event;
+      return patchTerminal(state, id, (term) => {
+        if (event === "started") {
+          return {
+            ...term,
+            agent: { name, startedAt: state.now },
+            finished: null,
+            lastOutputAt: state.now,
+          };
+        }
+        // Ignore a duplicate finish from a slower detection source (design section 5).
+        if (term.finished && state.now - term.finished.at < 5000) return term;
+        return {
+          ...term,
+          agent: null,
+          finished: {
+            name: name || term.agent?.name || "Agent",
+            at: state.now,
+            durationMs: durationMs ?? null,
+          },
+        };
+      });
+    }
+
+    case "terminal/stats":
+      return patchTerminal(state, action.id, (term) => ({
+        ...term,
+        stats: { cpuPercent: action.cpuPercent, memBytes: action.memBytes },
+      }));
+
+    case "terminal/command":
+      return patchTerminal(state, action.id, (term) => ({ ...term, lastCommand: action.command }));
+
+    case "terminal/focus": {
+      if (action.id === null) return { ...state, focusedId: null };
+      const term = state.terminals[action.id];
+      if (!term) return state;
+      // Looking at a pane acknowledges its finished marker.
+      const terminals = term.finished
+        ? { ...state.terminals, [action.id]: { ...term, finished: null } }
+        : state.terminals;
+      return {
+        ...state,
+        terminals,
+        focusedId: action.id,
+        page: pageOf(state.order.indexOf(action.id)),
+      };
+    }
+
+    case "terminal/focus-index": {
+      const id = pageSlice(state.order, state.page)[action.index];
+      return id ? reducer(state, { type: "terminal/focus", id }) : state;
+    }
+
+    case "terminal/move": {
+      if (!state.focusedId) return state;
+      const order = moveTerminal(state.order, state.focusedId, action.dir);
+      if (order === state.order) return state;
+      return { ...state, order, page: pageOf(order.indexOf(state.focusedId)) };
+    }
+
+    case "terminal/move-focus": {
+      const id = neighbourId(state, action.dir);
+      return id ? reducer(state, { type: "terminal/focus", id }) : state;
+    }
+
+    case "notes/root":
+      return { ...state, notes: { ...state.notes, root: action.root } };
+
+    case "notes/tree":
+      return { ...state, notes: { ...state.notes, tree: action.tree } };
+
+    case "notes/toggle-folder": {
+      const expanded = state.notes.expanded.includes(action.relPath)
+        ? state.notes.expanded.filter((path) => path !== action.relPath)
+        : [...state.notes.expanded, action.relPath];
+      return { ...state, notes: { ...state.notes, expanded } };
+    }
+
+    case "notes/opening":
+      return {
+        ...state,
+        notes: { ...state.notes, openPath: action.relPath, loading: true, conflict: null },
+      };
+
+    case "notes/opened":
+      return {
+        ...state,
+        notes: {
+          ...state.notes,
+          openPath: action.relPath,
+          content: action.content,
+          baseline: action.content,
+          mtimeMs: action.mtimeMs,
+          saveState: "clean",
+          conflict: null,
+          loading: false,
+        },
+      };
+
+    case "notes/closed":
+      return {
+        ...state,
+        notes: {
+          ...state.notes,
+          openPath: null,
+          content: "",
+          baseline: "",
+          mtimeMs: null,
+          saveState: "clean",
+          conflict: null,
+          loading: false,
+        },
+      };
+
+    case "notes/edit":
+      return {
+        ...state,
+        notes: {
+          ...state.notes,
+          content: action.content,
+          saveState: action.content === state.notes.baseline ? "clean" : "dirty",
+        },
+      };
+
+    case "notes/saving":
+      return { ...state, notes: { ...state.notes, saveState: "saving" } };
+
+    case "notes/saved":
+      // `content` is what actually reached disk. Anything typed while the write
+      // was in flight leaves the buffer dirty again.
+      return {
+        ...state,
+        notes: {
+          ...state.notes,
+          baseline: action.content,
+          mtimeMs: action.mtimeMs,
+          saveState: state.notes.content === action.content ? "saved" : "dirty",
+          conflict: null,
+        },
+      };
+
+    case "notes/save-failed":
+      // Parked until the next edit, so a failing write is not retried in a loop.
+      return { ...state, notes: { ...state.notes, saveState: "error" } };
+
+    case "notes/conflict":
+      return {
+        ...state,
+        notes: {
+          ...state.notes,
+          saveState: "dirty",
+          conflict: { currentMtimeMs: action.currentMtimeMs },
+        },
+      };
+
+    case "notes/conflict-dismissed":
+      return { ...state, notes: { ...state.notes, conflict: null } };
+
+    default:
+      return state;
+  }
+}
+
+// Helpers -----------------------------------------------------------------
+
+function newTerminal(info: TerminalInfo, now: number): TerminalState {
+  return {
+    info,
+    git: null,
+    agent: null,
+    finished: null,
+    lastCommand: null,
+    stats: null,
+    lastOutputAt: now,
+  };
+}
+
+function patchTerminal(
+  state: AppState,
+  id: TerminalId,
+  patch: (term: TerminalState) => TerminalState,
+): AppState {
+  const term = state.terminals[id];
+  if (!term) return state;
+  const next = patch(term);
+  if (next === term) return state;
+  return { ...state, terminals: { ...state.terminals, [id]: next } };
+}
+
+function clampPage(page: number, total: number): number {
+  return Math.min(Math.max(0, page), pageCount(total) - 1);
+}
+
+/** The terminal one cell away from the focused one, inside the current page. */
+function neighbourId(state: AppState, dir: Direction): TerminalId | null {
+  if (!state.focusedId) return null;
+  const index = state.order.indexOf(state.focusedId);
+  if (index === -1) return null;
+  const page = pageOf(index);
+  const onPage = pageSlice(state.order, page);
+  const { cols } = layoutFor(onPage.length);
+  const local = index - page * PAGE_SIZE;
+  const row = Math.floor(local / cols);
+  const col = local % cols;
+
+  let target: number | null = null;
+  if (dir === "up" && row > 0) target = local - cols;
+  if (dir === "down" && local + cols < onPage.length) target = local + cols;
+  if (dir === "left" && col > 0) target = local - 1;
+  if (dir === "right" && col < cols - 1 && local + 1 < onPage.length) target = local + 1;
+
+  return target === null ? null : (onPage[target] ?? null);
+}
+
+// Selectors ---------------------------------------------------------------
+
+export function visibleIds(state: AppState): TerminalId[] {
+  return pageSlice(state.order, state.page);
+}
+
+export function totalPages(state: AppState): number {
+  return pageCount(state.order.length);
+}
+
+export function toSession(state: AppState): Session {
+  return {
+    version: 1,
+    activeTab: state.activeTab,
+    focusedId: state.focusedId,
+    page: state.page,
+    terminals: state.order.map((id) => ({
+      id,
+      cwd: state.terminals[id]?.info.cwd ?? "",
+      labelOverride: null,
+    })),
+    notes: { openRelPath: state.notes.openPath, expandedFolders: state.notes.expanded },
+  };
+}

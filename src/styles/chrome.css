@@ -1,0 +1,214 @@
+/* The single 44px window bar. Chrome.dc.html */
+
+.chrome {
+  height: var(--chrome-h);
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 12px 0 16px;
+  color: var(--text);
+}
+
+.chrome__brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 260px;
+  min-width: 0;
+}
+
+.chrome__mark {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border-radius: 3px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-violet));
+}
+
+.chrome__title {
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--text-70);
+}
+
+.chrome__center {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+}
+
+.chrome__right {
+  width: 260px;
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Keeps the tab group centred: the actions overflow towards the middle rather
+   than wrapping when the pager appears. */
+.chrome__right > * {
+  flex: none;
+}
+
+/* Segmented tab control ------------------------------------------------ */
+
+.tabs {
+  display: flex;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--fill-1);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(20px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.tabs__item {
+  padding: 4px 18px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  color: var(--text-65);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.tabs__item:hover {
+  color: var(--text-strong);
+}
+
+.tabs__item--active,
+.tabs__item--active:hover {
+  font-weight: 600;
+  background: var(--fill-4);
+  color: var(--text-strong);
+  box-shadow: var(--shadow-seg);
+}
+
+/* Pager ---------------------------------------------------------------- */
+
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 28px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--fill-1);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  margin-right: 6px;
+}
+
+.pager__step {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: var(--text-70);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.pager__step:hover:not(:disabled) {
+  background: var(--fill-hover);
+}
+
+.pager__step:disabled {
+  color: var(--text-28);
+  cursor: default;
+}
+
+.pager__label {
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: rgba(238, 241, 246, 0.8);
+  padding: 0 4px;
+}
+
+/* Actions -------------------------------------------------------------- */
+
+.chrome__new {
+  height: 28px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 8px;
+  background: var(--fill-3);
+  border: 1px solid var(--edge-strong);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-strong);
+  transition: background-color 120ms ease;
+}
+
+.chrome__new:hover {
+  background: var(--fill-5);
+}
+
+.chrome__new-glyph {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.chrome__help {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.chrome__help--active {
+  background: var(--fill-hover);
+  color: var(--text-strong);
+}
+
+.chrome__divider {
+  width: 1px;
+  height: 16px;
+  background: rgba(255, 255, 255, 0.12);
+  margin: 0 6px;
+  flex: none;
+}
+
+/* Window controls ------------------------------------------------------ */
+
+.winbtns {
+  display: flex;
+  gap: 2px;
+  color: var(--text-55);
+}
+
+.winbtn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.winbtn:hover {
+  background: var(--fill-hover);
+}
+
+.winbtn--maximize {
+  font-size: 11px;
+}
+
+.winbtn--close {
+  font-size: 14px;
+}
+
+.winbtn--close:hover {
+  background: var(--danger);
+  color: var(--text-strong);
+}

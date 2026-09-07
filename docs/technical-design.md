@@ -1,0 +1,670 @@
+# Terminal Grid: technical design
+
+Working name: **Terminal Grid** (rename freely). Desktop app built on Tauri 2 with a Rust core. The frontend visual layer is out of scope here; it will come from Claude Design. This document defines everything the frontend needs to plug into: the process model, the Rust subsystems, the IPC contract, the state model, and the Windows specifics.
+
+Versions checked on crates.io and npm on 7 September 2026:
+
+| Layer | Package | Version |
+|---|---|---|
+| Rust | tauri | 2.11.5 |
+| Rust | tauri-build | 2.6.3 |
+| Rust | tauri-plugin-dialog | 2.7.3 |
+| Rust | portable-pty | 0.9.0 |
+| Rust | sysinfo | 0.39.6 |
+| Rust | trash | 5.2.7 |
+| Rust | notify | 8.2.0 |
+| Rust | base64 | 0.23.1 |
+| Rust | serde / serde_json | 1.0.229 / 1.0.151 |
+| Rust | thiserror | 2.0.20 |
+| JS | @tauri-apps/api | 2.11.1 |
+| JS | @tauri-apps/cli | 2.11.4 |
+| JS | @tauri-apps/plugin-dialog | 2.7.3 |
+| JS | @xterm/xterm | 6.0.0 |
+| JS | @xterm/addon-fit / addon-webgl / addon-serialize | 0.11.0 / 0.19.0 / 0.14.0 |
+
+---
+
+## 1. Requirements mapped to design decisions
+
+| # | Requirement | Where it lives |
+|---|---|---|
+| 1 | One to many terminals in a single window | Rust `pty` module owns N sessions; frontend renders one xterm.js instance per session |
+| 2 | Responsive grid up to 9, then pages | Pure layout function in the frontend (section 6), no backend involvement |
+| 3 | Outline on focused terminal | Frontend focus state; backend only needs to know the focused id for git refresh priority |
+| 4 | Git labels per terminal | Rust `git` module, refreshed on cwd change and command completion via shell integration |
+| 5 | Worktrees visible for the active terminal | `git worktree list --porcelain` parsed in Rust, cross referenced with the cwd of every open session |
+| 6 | Full screen | `tauri.conf.json` window `fullscreen: true`, F11 toggle through the window API |
+| 7 | Ctrl+Alt+Arrow moves terminals | Frontend keyboard handler in capture phase, xterm custom key handler to stop xterm swallowing it |
+| 8 | Subtle animation when an LLM agent finishes | Rust `agent` watcher (process tree) plus shell integration and BEL as fallbacks, emits `terminal://agent` events |
+| 9 | Terminals and Notes tabs | Frontend routing; both trees stay mounted so PTYs keep streaming |
+| 10 | Notes: tree, editor, viewer, create/open/delete | Rust `notes` module with sandboxed file operations under a notes root |
+
+---
+
+## 2. Stack and repository layout
+
+**Core:** Rust, Tauri 2, portable-pty (ConPTY on Windows), git CLI invoked as a subprocess (no libgit2, keeps the Windows build simple and respects the user's git config, credential helpers and worktrees exactly as the CLI sees them).
+
+**Frontend runtime:** the WebView (WebView2 on Windows). Whatever Claude Design produces needs two non visual libraries: `@xterm/xterm` for the terminal surface and `@tauri-apps/api` for IPC. Everything else (framework, markdown editor, markdown renderer) is the frontend's choice.
+
+```
+terminal-grid/
+  package.json
+  src/                      # frontend, delivered separately
+  src-tauri/
+    Cargo.toml
+    build.rs
+    tauri.conf.json
+    capabilities/default.json
+    icons/
+    src/
+      main.rs               # calls terminal_grid_lib::run()
+      lib.rs                # builder, plugin registration, command handler list, managed state
+      error.rs              # AppError (thiserror) with serde Serialize so commands can return it
+      pty/
+        mod.rs              # PtyManager, Session, spawn/write/resize/close
+        shell.rs            # shell discovery and integration script generation
+        reader.rs           # reader thread, chunk coalescing, event emission
+      git/
+        mod.rs              # GitInfo model, GitService (cache + refresh)
+        cli.rs              # subprocess wrapper with CREATE_NO_WINDOW
+        worktree.rs         # porcelain parser
+      agent/
+        mod.rs              # AgentWatcher: process tree polling, state transitions
+      notes/
+        mod.rs              # NotesService: tree, read, write, create, delete, rename
+        paths.rs            # root sandboxing and validation
+      state/
+        mod.rs              # Config + Session persistence (app config dir)
+    resources/
+      shell-integration.ps1 # bundled, copied to app data dir on first run
+      shell-integration.sh
+```
+
+Cargo.toml dependencies:
+
+```toml
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+portable-pty = "0.9"
+sysinfo = "0.39"
+trash = "5"
+notify = "8"
+base64 = "0.23"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+uuid = { version = "1", features = ["v4"] }
+dirs = "7"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+```
+
+Windows only dependency for process creation flags is already in std (`std::os::windows::process::CommandExt`).
+
+---
+
+## 3. Process model
+
+```
+┌──────────────────────────────── Tauri process ─────────────────────────────────┐
+│                                                                                 │
+│  Rust core (main thread + worker threads)                                       │
+│  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐    │
+│  │ PtyManager    │  │ GitService    │  │ AgentWatcher  │  │ NotesService  │    │
+│  │ Mutex<HashMap>│  │ cache + TTL   │  │ 1s poll thread│  │ sandboxed fs  │    │
+│  └──────┬────────┘  └──────┬────────┘  └──────┬────────┘  └──────┬────────┘    │
+│         │ reader thread    │                   │                  │             │
+│         │ per session      │                   │                  │             │
+│         ▼                  ▼                   ▼                  ▼             │
+│     emit events        emit events         emit events       command results   │
+│  ══════════════════════════ Tauri IPC (commands + events) ═════════════════════ │
+│                                                                                 │
+│  WebView2 (frontend)                                                            │
+│  xterm instances ⇄ terminal://output   grid state   notes state   hotkeys       │
+└─────────────────────────────────────────────────────────────────────────────────┘
+        │ ConPTY                       │ git.exe (hidden)        │ fs
+        ▼                              ▼                         ▼
+   pwsh.exe / cmd.exe / bash        repo                      notes root
+```
+
+Managed state registered in `lib.rs` via `app.manage(...)`:
+
+```rust
+pub struct AppState {
+    pub pty: PtyManager,          // Arc<Mutex<HashMap<TerminalId, Session>>>
+    pub git: GitService,          // Arc<Mutex<HashMap<PathBuf, CachedGitInfo>>>
+    pub agent: AgentWatcher,      // handle to the polling thread + shared status map
+    pub notes: NotesService,      // Arc<RwLock<NotesConfig>>
+    pub config: Arc<RwLock<Config>>,
+}
+```
+
+Threads:
+
+- One reader thread per PTY session (blocking read on the master).
+- One waiter thread per session (`child.wait()`), emits exit.
+- One AgentWatcher thread (1 s tick).
+- One optional `notify` watcher thread for the notes root.
+- Git commands run on Tauri's async command pool (`#[tauri::command] async fn`) so they never block the main thread.
+
+---
+
+## 4. Terminal subsystem (`pty`)
+
+### 4.1 Session model
+
+```rust
+pub type TerminalId = String; // uuid v4
+
+pub struct Session {
+    pub id: TerminalId,
+    pub master: Box<dyn portable_pty::MasterPty + Send>,
+    pub writer: Box<dyn std::io::Write + Send>,
+    pub child: Box<dyn portable_pty::Child + Send + Sync>,
+    pub shell_pid: Option<u32>,
+    pub cwd: PathBuf,                 // last known, updated by OSC 7
+    pub spawned_at: std::time::Instant,
+    pub shell: ShellKind,             // Pwsh, WindowsPowerShell, Cmd, Bash, Zsh, Other
+}
+```
+
+### 4.2 Spawn
+
+```rust
+let pty_system = native_pty_system();
+let pair = pty_system.openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })?;
+let mut cmd = CommandBuilder::new(shell.program());
+cmd.args(shell.args(&integration_script_path));
+cmd.cwd(&cwd);
+cmd.env("TERM", "xterm-256color");
+cmd.env("COLORTERM", "truecolor");
+cmd.env("TERMINAL_GRID_ID", &id);
+cmd.env("TERMINAL_GRID", "1");
+let child = pair.slave.spawn_command(cmd)?;
+drop(pair.slave);
+let reader = pair.master.try_clone_reader()?;
+let writer = pair.master.take_writer()?;
+```
+
+Shell discovery order on Windows: `config.shell` if set, else `pwsh.exe` on PATH, else `powershell.exe`, else `%COMSPEC%`. On other platforms: `$SHELL`, else `/bin/bash`.
+
+`pair.slave` must be dropped after spawn or the reader never sees EOF on exit.
+
+### 4.3 Reader thread and output events
+
+The reader loops on `read()` into an 8 KiB buffer and coalesces chunks: flush to the frontend when either 16 KiB has accumulated or 8 ms have passed since the first unflushed byte. Payload is base64 so multi byte UTF-8 split across chunks is never corrupted by JSON string conversion; the frontend decodes to `Uint8Array` and calls `term.write(bytes)`.
+
+```rust
+app.emit_to("main", "terminal://output", OutputEvent { id, data_b64 })
+```
+
+Backpressure: if a single session emits more than 4 MiB in one second (a runaway `cat`), the reader inserts a 20 ms sleep per chunk. This keeps the UI responsive without dropping bytes.
+
+Exit: the waiter thread emits `terminal://exit { id, code }`. The session stays in the map with `child` exited so the frontend can show the exit and offer restart; `close_terminal` removes it.
+
+### 4.4 Commands
+
+| Command | Input | Output |
+|---|---|---|
+| `create_terminal` | `{ cwd?: string, cols: u16, rows: u16 }` | `{ id, cwd, shell }` |
+| `write_terminal` | `{ id, data: string }` (UTF-8 text, xterm `onData`) | `()` |
+| `write_terminal_bytes` | `{ id, data_b64 }` (for binary paste) | `()` |
+| `resize_terminal` | `{ id, cols, rows }` | `()` |
+| `close_terminal` | `{ id }` | `()` kills child, drops session |
+| `restart_terminal` | `{ id }` | `{ id, cwd, shell }` respawn in last cwd, same id |
+| `list_terminals` | | `TerminalInfo[]` |
+| `set_terminal_cwd` | `{ id, cwd }` | `()` manual override when integration is absent |
+
+### 4.5 Shell integration
+
+The app writes `shell-integration.ps1` (and `.sh`) into `app_data_dir()` on startup and launches the shell with it. PowerShell launch:
+
+```
+pwsh.exe -NoLogo -NoExit -Command ". '<app_data>\shell-integration.ps1'"
+```
+
+The script dot sources the user's `$PROFILE` first if it exists, then wraps `prompt`:
+
+```powershell
+$global:__tg_original_prompt = $function:prompt
+$global:__tg_last_history_id = -1
+
+function global:prompt {
+    $exit = if ($?) { 0 } else { 1 }
+    $esc = [char]27; $bel = [char]7
+    # Command finished (OSC 133;D) with exit code and last command text (custom OSC 7777)
+    $h = Get-History -Count 1
+    if ($h -and $h.Id -ne $global:__tg_last_history_id) {
+        $global:__tg_last_history_id = $h.Id
+        $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($h.CommandLine))
+        Write-Host -NoNewline "$esc]7777;cmd;$b64$bel"
+        Write-Host -NoNewline "$esc]133;D;$exit$bel"
+    }
+    # Current directory (OSC 7)
+    $p = (Get-Location).ProviderPath -replace '\\','/'
+    Write-Host -NoNewline "$esc]7;file://localhost/$p$bel"
+    # Prompt start (OSC 133;A)
+    Write-Host -NoNewline "$esc]133;A$bel"
+    $out = & $global:__tg_original_prompt
+    Write-Host -NoNewline "$esc]133;B$bel"
+    return $out
+}
+```
+
+The frontend registers OSC handlers on xterm's parser:
+
+- `7` → `set_terminal_cwd` is not called; instead the frontend calls `report_cwd { id, cwd }` which updates the session and triggers a git refresh.
+- `133` → `A/B/D` drive the fallback agent state machine (section 5).
+- `7777` → last command text, used to decide whether the finished command was an agent.
+
+For bash/zsh the `.sh` file does the same with `PROMPT_COMMAND` / `precmd`. cmd.exe gets no integration; the process tree watcher still works there, cwd stays whatever was set at creation unless the user changes it from the pane header.
+
+---
+
+## 5. Agent finish detection (`agent`)
+
+Three signals, ordered by reliability. The frontend animates on the first `finished` it receives and ignores duplicates for 5 s.
+
+### 5.1 Primary: process tree watcher (Rust)
+
+`AgentWatcher` ticks every 1000 ms. One `sysinfo::System::refresh_processes` per tick, then for each session:
+
+1. Collect descendants of `shell_pid` (walk `parent()` links, depth up to 8).
+2. A descendant is an agent if its exe name or command line matches one of `config.agent_patterns` (default: `claude`, `codex`, `gemini`, `aider`, `gpt`, `copilot`). Claude Code on Windows shows up as `node.exe` with `claude` in the command line, so matching on the full command line is required, not just the exe name.
+3. State per session: `Idle` or `Running { name, since }`.
+4. Transition `Running → Idle` emits `terminal://agent { id, event: "finished", name, duration_ms }`. Transition `Idle → Running` emits `{ event: "started", name }`.
+
+A minimum running time of 1500 ms filters out `claude --version` style invocations. The watcher only runs while at least one session exists.
+
+### 5.2 Secondary: shell integration
+
+On `OSC 133;D` the frontend checks the last command (from `OSC 7777`) against the same patterns. If it matches and the process watcher has not already reported `finished` in the last 5 s, treat it as finished. Covers the case where the agent exits so quickly between ticks that the watcher misses it.
+
+### 5.3 Tertiary: BEL
+
+`term.onBell` while the pane is not focused → finished. Claude Code emits a bell when `preferredNotifChannel` is set to `terminal_bell`; document this in the README as an optional one liner. Codex and others may also ring.
+
+### 5.4 Idle fallback for shells without integration
+
+Only when the session shell is `Cmd` and the process watcher found no agent process: if the user's typed line matched a pattern, then output stayed above 0 bytes/s for at least 3 s and is now silent for `config.idle_timeout_ms` (default 4000) → finished. This is a heuristic and is labelled as such in settings.
+
+The animation itself and the visual "done" marker are frontend concerns; the contract is only the event.
+
+---
+
+## 6. Grid, paging and movement (frontend logic, backend agnostic)
+
+Included because it is deterministic logic the design should not have to invent.
+
+```ts
+type LayoutSpec = { cols: number; rows: number };
+export function layoutFor(count: number): LayoutSpec {
+  if (count <= 1) return { cols: 1, rows: 1 };
+  if (count === 2) return { cols: 2, rows: 1 };
+  if (count <= 4) return { cols: 2, rows: 2 };
+  if (count <= 6) return { cols: 3, rows: 2 };
+  return { cols: 3, rows: 3 };
+}
+export const PAGE_SIZE = 9;
+export const pageOf = (index: number) => Math.floor(index / PAGE_SIZE);
+```
+
+State: `order: TerminalId[]`, `focusedId`, `page`. Layout is computed from the number of terminals on the current page, so page 2 with two terminals renders 2x1, not 3x3 with gaps.
+
+Move with Ctrl+Alt+Arrow: compute the focused terminal's `(row, col)` inside its page, target `(row±1, col)` or `(row, col±1)`; if the target exists on the page, swap the two ids in `order`. Ctrl+Alt+Right on the last cell of a full page moves the terminal to the first slot of the next page (and creates the page if needed); Ctrl+Alt+Left on the first cell of page n>0 moves it to the last slot of the previous page. `order` is persisted.
+
+Other hotkeys (all Ctrl+Alt, chosen to not collide with common terminal shortcuts):
+
+| Keys | Action |
+|---|---|
+| Ctrl+Alt+Arrow | Move focused terminal |
+| Ctrl+Alt+Shift+Arrow | Move focus only |
+| Ctrl+Alt+N | New terminal (folder picker via `tauri-plugin-dialog`) |
+| Ctrl+Alt+Shift+N | New terminal in the same cwd as the focused one |
+| Ctrl+Alt+W | Close focused terminal (confirm if agent running) |
+| Ctrl+Alt+PageUp / PageDown | Previous / next page |
+| Ctrl+Alt+1..9 | Focus terminal n on the current page |
+| Ctrl+Alt+T / Ctrl+Alt+M | Switch to Terminals / Notes tab |
+| F11 | Toggle fullscreen |
+
+Implementation notes:
+
+- Register one `keydown` listener on `window` in the capture phase. Handle and `preventDefault` when the combo matches.
+- Every xterm instance gets `term.attachCustomKeyEventHandler(e => !(e.ctrlKey && e.altKey))` so xterm never sees Ctrl+Alt combos. Arrow keys produce no character under AltGr layouts, so the Dutch and US international layouts on Windows are fine. Ctrl+Alt+N and the digits do collide with AltGr on some layouts; the settings screen should allow rebinding the modifier to Ctrl+Shift.
+- Hidden pages keep their xterm instances mounted but out of view (`visibility: hidden; position: absolute`), never `display: none`, so `FitAddon.fit()` keeps working and scrollback survives. On page switch, call `fit()` and `resize_terminal` for every pane that became visible.
+
+Fullscreen: `"fullscreen": true` in the window config. F11 calls `getCurrentWindow().setFullscreen(!await isFullscreen())`. Alt+F4 still closes; the app intercepts `onCloseRequested` and asks for confirmation when any agent is running.
+
+---
+
+## 7. Git subsystem (`git`)
+
+### 7.1 Model
+
+```rust
+#[derive(Serialize, Clone)]
+pub struct GitInfo {
+    pub in_repo: bool,
+    pub repo_root: Option<PathBuf>,       // rev-parse --show-toplevel
+    pub common_dir: Option<PathBuf>,      // rev-parse --git-common-dir (main repo, for worktrees)
+    pub repo_name: Option<String>,        // last segment of the main repo path
+    pub branch: Option<String>,           // abbrev-ref HEAD, "HEAD" when detached
+    pub head_short: Option<String>,       // rev-parse --short HEAD
+    pub user_name: Option<String>,        // git config user.name (effective, includes includeIf)
+    pub user_email: Option<String>,
+    pub remote_url: Option<String>,       // remote get-url origin
+    pub dirty: bool,                      // status --porcelain non empty
+    pub ahead: u32, pub behind: u32,      // rev-list --left-right --count @{u}...HEAD
+    pub is_worktree: bool,                // repo_root != common_dir parent
+    pub worktrees: Vec<Worktree>,
+}
+
+#[derive(Serialize, Clone)]
+pub struct Worktree {
+    pub path: PathBuf,
+    pub head: Option<String>,
+    pub branch: Option<String>,           // refs/heads/x → x
+    pub is_main: bool,
+    pub is_current: bool,                 // this terminal's cwd is inside it
+    pub detached: bool,
+    pub locked: bool,
+    pub prunable: bool,
+    pub open_in: Vec<TerminalId>,         // other sessions whose cwd is inside this worktree
+}
+```
+
+`open_in` is what satisfies requirement 5: the pane header of the focused terminal can list every worktree of its repo and mark the ones that are open in other panes (with the pane number), and its own.
+
+### 7.2 Execution
+
+`git/cli.rs` runs `git` with:
+
+- `current_dir(cwd)`
+- `env("GIT_OPTIONAL_LOCKS", "0")` so status never blocks on index lock
+- `env("GIT_TERMINAL_PROMPT", "0")`
+- Windows: `creation_flags(0x08000000)` (CREATE_NO_WINDOW) so no console flashes
+- a 3 s timeout (spawn, then poll `try_wait` with a deadline; kill on expiry)
+
+All fields are gathered by a small number of calls: `rev-parse --show-toplevel --git-common-dir --abbrev-ref HEAD --short HEAD` in one invocation, `config --get user.name`, `config --get user.email`, `remote get-url origin`, `status --porcelain --untracked-files=no` (skipped when the repo has more than 50k tracked files, detected via `git ls-files | wc -l` once per repo root and cached), `rev-list --left-right --count @{upstream}...HEAD`, `worktree list --porcelain`.
+
+### 7.3 Porcelain parser
+
+`git worktree list --porcelain` emits blocks separated by blank lines:
+
+```
+worktree C:/dev/app
+HEAD 3f2a...
+branch refs/heads/main
+
+worktree C:/dev/app-feature
+HEAD 91bc...
+branch refs/heads/feature/x
+locked
+
+worktree C:/dev/app-old
+HEAD 77ab...
+detached
+prunable gitdir file points to non-existent location
+```
+
+The first block is always the main worktree. Parser is a pure function with unit tests over these fixtures, including paths with spaces and Windows drive letters.
+
+### 7.4 Refresh policy
+
+Cache keyed by canonical cwd, TTL 5 s. Refresh triggers:
+
+1. `report_cwd` (OSC 7) with a changed path → immediate refresh.
+2. `OSC 133;D` (a command finished) → refresh, debounced 500 ms per session.
+3. Focus change → refresh the newly focused session if the cache entry is older than 2 s.
+4. Background timer every 15 s for every visible session (branch may change from another window).
+5. `notify` watcher on `<common_dir>/HEAD`, `<common_dir>/worktrees/`, and `<repo_root>/.git/HEAD` for worktrees → refresh all sessions in that repo. This is what makes `git worktree add` in one pane show up in another within a second.
+
+Result is emitted as `terminal://git { id, info }` rather than returned, so a single refresh can fan out to every session in the same repo. `get_git_info { id }` exists for the initial paint.
+
+Labels: the backend supplies fields only; the design decides how to compose them. Suggested primary label is `repo_name` and `branch`, secondary is `user_name` and the dirty/ahead/behind markers.
+
+---
+
+## 8. Notes subsystem (`notes`)
+
+### 8.1 Storage
+
+Plain `.md` files in a notes root, default `%USERPROFILE%\Documents\TerminalGrid\Notes`, changeable through a folder picker. Subfolders allowed. Nothing else is stored; the folder is safe to sync or put in a repo.
+
+### 8.2 Commands
+
+| Command | Input | Output |
+|---|---|---|
+| `notes_get_root` | | `{ root }` |
+| `notes_set_root` | `{ root }` | `{ root }` creates it if missing |
+| `notes_tree` | | `NoteNode[]` recursive, folders first, sorted case insensitively, `.md` and folders only, hidden entries skipped |
+| `notes_read` | `{ rel_path }` | `{ content, mtime_ms }` |
+| `notes_write` | `{ rel_path, content, expected_mtime_ms? }` | `{ mtime_ms }` |
+| `notes_create` | `{ rel_path, kind: "file" \| "folder" }` | `NoteNode` |
+| `notes_rename` | `{ rel_path, new_rel_path }` | `NoteNode` |
+| `notes_delete` | `{ rel_path }` | `()` |
+| `notes_reveal` | `{ rel_path }` | `()` opens in Explorer via `tauri-plugin-opener` |
+
+```rust
+#[derive(Serialize)]
+pub struct NoteNode {
+    pub name: String,
+    pub rel_path: String,           // forward slashes, relative to root
+    pub kind: NodeKind,             // File | Folder
+    pub mtime_ms: u64,
+    pub size: u64,
+    pub children: Option<Vec<NoteNode>>,
+}
+```
+
+### 8.3 Safety rules
+
+- Every `rel_path` is joined to the root and canonicalized; the result must start with the canonical root or the command returns `AppError::OutsideRoot`. Rejects `..`, absolute paths, and symlinks that escape.
+- File names are validated against Windows reserved names (`CON`, `PRN`, `AUX`, `NUL`, `COM1..9`, `LPT1..9`) and illegal characters `<>:"/\|?*`.
+- `notes_write` is atomic: write to `<name>.md.tmp-<uuid>` in the same directory, then rename over the target. If `expected_mtime_ms` is given and does not match the file on disk, return `AppError::Conflict { current_mtime_ms }` so the frontend can offer overwrite or reload.
+- `notes_delete` moves to the Recycle Bin via the `trash` crate, never a hard delete. Folder deletion requires the folder to be empty unless `force: true`.
+- `notes_create` for a file writes a single `# <name>` line so the editor opens with something.
+
+### 8.4 External changes
+
+A `notify` watcher on the root (recursive) emits `notes://changed { rel_path, kind: "create" | "modify" | "remove" | "rename" }`, debounced 300 ms. The frontend refreshes the tree and, if the open note changed on disk and the editor is clean, reloads it.
+
+Editor behaviour (frontend contract): autosave 600 ms after the last keystroke and on blur, tab switch, and window close. The frontend keeps `mtime_ms` from the last read or write and passes it as `expected_mtime_ms`.
+
+---
+
+## 9. Persistence (`state`)
+
+Two files in `app.path().app_config_dir()` (`%APPDATA%\com.liamread.terminalgrid\` on Windows, adjust identifier):
+
+`config.json` (user settings):
+
+```json
+{
+  "version": 1,
+  "shell": null,
+  "shellArgs": [],
+  "notesRoot": null,
+  "agentPatterns": ["claude", "codex", "gemini", "aider", "gpt", "copilot"],
+  "idleTimeoutMs": 4000,
+  "hotkeyModifier": "ctrl+alt",
+  "fontFamily": null,
+  "fontSize": 14,
+  "scrollback": 10000,
+  "restoreSessionOnLaunch": true
+}
+```
+
+`session.json` (last layout, written on every change, debounced 1 s, and on exit):
+
+```json
+{
+  "version": 1,
+  "activeTab": "terminals",
+  "focusedId": "…",
+  "page": 0,
+  "terminals": [
+    { "id": "…", "cwd": "C:/dev/app", "labelOverride": null },
+    { "id": "…", "cwd": "C:/dev/app-feature", "labelOverride": "feature box" }
+  ],
+  "notes": { "openRelPath": "ideas/kafka.md", "expandedFolders": ["ideas"] }
+}
+```
+
+On launch, if `restoreSessionOnLaunch` is true, the frontend calls `create_terminal` for each saved entry in order (cwd only; shells are not resumed, that is not possible with ConPTY). If a saved cwd no longer exists, the terminal starts in the user's home and the header shows a notice.
+
+Commands: `config_get`, `config_set { patch }`, `session_get`, `session_set { session }`.
+
+---
+
+## 10. IPC contract summary
+
+Events (Rust → frontend), all emitted to the `main` window:
+
+| Event | Payload |
+|---|---|
+| `terminal://output` | `{ id, dataB64 }` |
+| `terminal://exit` | `{ id, code: number \| null }` |
+| `terminal://cwd` | `{ id, cwd }` echo after `report_cwd`, lets other components react |
+| `terminal://git` | `{ id, info: GitInfo }` |
+| `terminal://agent` | `{ id, event: "started" \| "finished", name, durationMs? , source: "process" \| "shell" \| "bell" \| "idle" }` |
+| `terminal://stats` | `{ id, cpuPercent, memBytes }` sampled on the AgentWatcher tick for the session process tree; the pane header renders it next to the agent badge |
+| `notes://changed` | `{ relPath, kind }` |
+
+Frontend → Rust commands are listed in sections 4.4, 7, 8, 9. All commands return `Result<T, AppError>` where `AppError` serializes to `{ code: string, message: string, ...extra }`. Codes: `NotFound`, `SpawnFailed`, `Io`, `OutsideRoot`, `Conflict`, `InvalidName`, `GitTimeout`, `GitNotInstalled`.
+
+Field naming: Rust structs use `#[serde(rename_all = "camelCase")]` so the frontend sees camelCase throughout. Command argument names are camelCase on the JS side and Tauri maps them to snake_case Rust parameters.
+
+TypeScript types for the contract live in `src/ipc/types.ts` and are the single file the design needs to import from. They are generated by hand for v1; `tauri-specta` can replace that later.
+
+---
+
+## 11. Tauri configuration
+
+`tauri.conf.json` (relevant parts):
+
+```json
+{
+  "productName": "Terminal Grid",
+  "identifier": "com.liamread.terminalgrid",
+  "app": {
+    "windows": [{
+      "label": "main",
+      "title": "Terminal Grid",
+      "fullscreen": true,
+      "resizable": true,
+      "decorations": true,
+      "minWidth": 1024,
+      "minHeight": 640
+    }],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "msi"],
+    "windows": {
+      "webviewInstallMode": { "type": "embedBootstrapper" },
+      "nsis": { "installMode": "perUser" }
+    },
+    "resources": ["resources/*"]
+  }
+}
+```
+
+`capabilities/default.json`:
+
+```json
+{
+  "identifier": "default",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-fullscreen",
+    "core:window:allow-is-fullscreen",
+    "core:window:allow-close",
+    "dialog:allow-open",
+    "dialog:allow-ask",
+    "opener:allow-reveal-item-in-dir"
+  ]
+}
+```
+
+No shell plugin and no fs plugin: every file and process operation goes through the Rust commands above, which keeps the capability surface small and the sandboxing rules in one place.
+
+`'unsafe-inline'` for styles is needed by xterm.js; scripts stay strict.
+
+---
+
+## 12. Windows specifics
+
+- ConPTY requires Windows 10 1809 or later. portable-pty uses it by default on Windows; no WinPTY fallback is shipped.
+- Prefer `pwsh.exe` (PowerShell 7) over `powershell.exe`: better ANSI handling and faster startup. Detected via `where.exe pwsh` at launch, cached.
+- Set `$OutputEncoding` and `[Console]::OutputEncoding` to UTF-8 in the integration script so non ASCII output renders correctly in xterm.
+- All `git.exe` and `where.exe` spawns use `CREATE_NO_WINDOW`.
+- Paths are stored with forward slashes internally and converted with `PathBuf` at the boundary; git returns forward slashes on Windows anyway.
+- `sysinfo` on Windows needs `refresh_processes` with `ProcessRefreshKind::new().with_cmd(UpdateKind::Always)` or command lines are empty and the Claude Code (`node.exe`) match fails.
+- Killing a shell kills the ConPTY, which sends the children a close; agents get a chance to clean up. `close_terminal` calls `child.kill()` then waits up to 2 s before dropping.
+- Build machine needs the MSVC toolchain (`rustup default stable-msvc`), Visual Studio Build Tools with the C++ workload, and Node 22. WebView2 runtime is bootstrapped by the installer.
+
+---
+
+## 13. Performance notes
+
+- Use `@xterm/addon-webgl` with a canvas fallback; 9 visible terminals on the DOM renderer is noticeably slower on 4K.
+- `scrollback` 10 000 lines per terminal by default; 9 terminals at that size is roughly 50 MB, acceptable.
+- Git refresh never runs more than 3 concurrent subprocesses (a semaphore in `GitService`); extra requests coalesce onto the pending one for the same repo.
+- AgentWatcher refreshes the process list once per tick, not once per session.
+- Output events go through `emit_to("main", …)` rather than a broadcast `emit`, and the frontend keeps a single listener that routes by id rather than one listener per pane.
+
+---
+
+## 14. Testing
+
+Unit tests in Rust:
+
+- `git::worktree::parse` over the fixtures in 7.3 plus edge cases (bare, missing branch line, path with spaces, trailing newline variations).
+- `notes::paths::resolve` rejects `..`, absolute paths, reserved names, symlink escapes.
+- `agent::state` transitions with minimum running time and duplicate suppression.
+- `pty::reader` coalescing with a fake reader (size and time thresholds).
+
+Unit tests in TypeScript:
+
+- `layoutFor`, `pageOf`, and the move function across page boundaries.
+- OSC parsing for `7`, `133`, `7777`.
+
+Manual checklist mapped to the ten requirements, run on Windows 11 with pwsh, Windows PowerShell 5.1 and cmd.exe:
+
+1. Spawn 1, 2, 3, 4, 5, 6, 7, 9, 10 terminals and confirm layouts and the page indicator.
+2. Move a terminal across every edge and across a page boundary.
+3. `cd` inside a worktree in pane 1, confirm pane 2 (same repo) lists it as open in pane 1 within a second.
+4. Run `claude` in a pane, switch focus away, finish the task, confirm the finished event arrives from `process` and the shell source does not double fire.
+5. Create, edit, rename, delete a note; delete lands in the Recycle Bin; edit the file in another editor and confirm the reload prompt.
+6. Close the app with an agent running; confirm the prompt; relaunch; confirm cwds restore.
+
+---
+
+## 15. Milestones
+
+1. **Core PTY loop:** spawn, output, input, resize, close, restore. One terminal, plain page.
+2. **Grid and hotkeys:** layout function, paging, movement, focus, fullscreen.
+3. **Git and worktrees:** service, cache, watcher, events, pane header data.
+4. **Agent detection:** process watcher, shell integration script, bell, idle fallback.
+5. **Notes:** service, tree, editor and viewer wiring, autosave, external change handling.
+6. **Polish and packaging:** settings, NSIS installer, README with the Claude Code bell tip.
+
+Frontend from Claude Design lands after milestone 2, when the IPC types and event flow are stable.
+
+---
+
+## 16. Decisions to confirm
+
+- Default shell: pwsh when present, else Windows PowerShell. Confirm you do not want cmd.exe as a first class option beyond "works without integration".
+- Agent patterns: the default list above, matched against the full command line. Add anything else you run.
+- Hotkey modifier: Ctrl+Alt as requested, with Ctrl+Shift as the alternative in settings because of AltGr on Dutch layouts.
+- Notes deletion goes to the Recycle Bin rather than a permanent delete.
+- Session restore respawns shells in their saved directories on launch; no attempt to replay history.
