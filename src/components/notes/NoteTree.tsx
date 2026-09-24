@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { NoteNode } from "../../ipc/types";
 import { cx } from "../../lib/cx";
 import { useAppActions, useAppState } from "../../state/AppProvider";
+import { CollapseButton } from "./CollapseButton";
 
 const INDENT_PX = 16;
 const BASE_PAD_PX = 8;
@@ -14,6 +15,11 @@ export function NoteTree() {
   return (
     <div className="notes__panel">
       <div className="tree__head">
+        <CollapseButton
+          side="left"
+          label="Hide the notes list"
+          onClick={() => actions.collapseNotesPanel("tree", true)}
+        />
         <div className="tree__title">Notes</div>
         <button
           type="button"

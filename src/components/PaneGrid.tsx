@@ -25,12 +25,12 @@ export function PaneGrid() {
 
   useEffect(() => {
     terminalRegistry.fitAll();
-  }, [state.page, state.order, state.activeTab]);
+  }, [state.page, state.order, state.activeTab, state.layoutMode]);
 
   return (
     <div className="grid">
       {pageIds.map((ids, page) => {
-        const layout = layoutFor(ids.length);
+        const layout = layoutFor(ids.length, state.layoutMode);
         const paneNumbers = new Map(ids.map((id, index) => [id, index + 1]));
         const ctx: PaneViewContext = {
           now: state.now,
@@ -58,6 +58,7 @@ export function PaneGrid() {
                   view={toPaneView(term, index, ctx)}
                   compact={ids.length >= COMPACT_FROM}
                   onFocus={() => actions.focusTerminal(id)}
+                  onOpenFrom={(how) => void actions.newTerminalFrom(id, how)}
                   onClose={() => void actions.closeTerminal(id)}
                   onRestart={() => void actions.restartTerminal(id)}
                 />

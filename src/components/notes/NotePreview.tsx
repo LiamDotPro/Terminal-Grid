@@ -1,6 +1,7 @@
 import { Fragment, useMemo, type ReactNode } from "react";
 import { parseMarkdown, type Block, type Inline } from "../../lib/markdown";
-import { useAppState } from "../../state/AppProvider";
+import { useAppActions, useAppState } from "../../state/AppProvider";
+import { CollapseButton } from "./CollapseButton";
 
 /**
  * Rendered view of the open note. The parser hands back a tree and this turns
@@ -8,11 +9,20 @@ import { useAppState } from "../../state/AppProvider";
  */
 export function NotePreview() {
   const { notes } = useAppState();
+  const actions = useAppActions();
   const blocks = useMemo(() => parseMarkdown(notes.content), [notes.content]);
 
   return (
     <div className="notes__panel">
-      <div className="panel-head">Preview</div>
+      <div className="panel-head">
+        <span>Preview</span>
+        <span className="spacer" />
+        <CollapseButton
+          side="right"
+          label="Hide preview, show only the editor"
+          onClick={() => actions.collapseNotesPanel("preview", true)}
+        />
+      </div>
       <div className="preview">
         {notes.openPath ? (
           <article className="preview__doc">{blocks.map(renderBlock)}</article>

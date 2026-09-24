@@ -56,17 +56,40 @@ Settings (AltGr layouts make `Ctrl+Alt` awkward on some keyboards).
 
 | Keys | Action |
 |---|---|
-| `<mod>+N` | New pane (folder picker). Add `Shift` to reuse the focused pane's folder |
+| `<mod>+N` | New pane (folder picker), placed after the focused pane. Add `Shift` to reuse the focused pane's folder |
+| `<mod>+L` | Cycle pane stacking: grid, side by side, stacked |
 | `<mod>+W` | Close pane (confirms while an agent is running) |
 | `<mod>+R` | Restart the shell in the focused pane |
 | `<mod>+←↑↓→` | Move the focused pane. Add `Shift` to move focus instead |
+| `Alt+←↑↓→` | Focus the neighbouring pane in that direction |
 | `<mod>+1…9` | Focus pane n on the current page |
 | `<mod>+[` / `<mod>+]` | Previous / next page (`PageUp` / `PageDown` also work) |
 | `<mod>+Tab` | Switch between Terminals and Notes (`<mod>+T` / `<mod>+M` also work) |
+| `<mod>+B` / `<mod>+P` | Notes: hide or show the notes list / the preview |
 | `<mod>+,` | Settings |
 | `F11` | Toggle fullscreen |
 
 Holding the modifier for a moment shows the same list as a popover.
+
+## Stacking and opening panes from a pane
+
+The three-way switch in the top bar (or `<mod>+L`) chooses how the panes on a
+page stack: **grid** (both directions, the responsive 1 to 3x3 table),
+**side by side** (one row, horizontal) or **stacked** (one column, vertical).
+The choice is remembered in the session. In the single-direction modes the
+arrow hotkeys only move along that direction.
+
+Every pane header has a `+` button. Clicking it opens a menu to start a new
+pane in the same folder or pick another one; `Shift`+click goes straight to
+the folder picker. Either way the new pane lands directly after the pane it
+was opened from, not at the end of the last page.
+
+## Clipboard
+
+The terminals use the system shortcuts: `Ctrl+V` or `Shift+Insert` pastes,
+`Ctrl+C` copies while text is selected (and interrupts otherwise, as usual),
+and `Ctrl+Insert` copies. Shells that enable bracketed paste get the text
+wrapped accordingly.
 
 ## Agent detection
 
@@ -91,3 +114,9 @@ Plain `.md` files under a folder you choose (default
 the last keystroke and on blur; writes are atomic and guarded by the file's
 modification time, so an edit made outside the app raises a reload/keep prompt
 instead of being overwritten. Deleting moves to the Recycle Bin.
+
+The notes list on the left and the preview on the right each fold away with
+the chevron in their header; the editor in the middle always stays and takes
+the freed width. A folded panel becomes a slim rail at its edge; click the rail
+(or use `<mod>+B` / `<mod>+P`) to bring it back. Both choices are remembered
+in the session.

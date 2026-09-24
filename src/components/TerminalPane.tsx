@@ -1,17 +1,29 @@
+import { useEffect, useRef, useState } from "react";
 import { cx } from "../lib/cx";
 import { isClaudeAgent, type PaneView } from "../state/model";
 import { XtermSurface } from "./XtermSurface";
+
+export type OpenFromHow = "same-folder" | "pick-folder";
 
 interface TerminalPaneProps {
   view: PaneView;
   /** Dense pages (3x3) drop the per-agent stats and the last command line. */
   compact: boolean;
   onFocus: () => void;
+  /** Opens a new pane next to this one. */
+  onOpenFrom: (how: OpenFromHow) => void;
   onClose: () => void;
   onRestart: () => void;
 }
 
-export function TerminalPane({ view, compact, onFocus, onClose, onRestart }: TerminalPaneProps) {
+export function TerminalPane({
+  view,
+  compact,
+  onFocus,
+  onOpenFrom,
+  onClose,
+  onRestart,
+}: TerminalPaneProps) {
   const showDetail = !compact && view.agent !== null && view.status !== "exited";
   const showSecondRow = view.worktrees.length > 0 || (showDetail && view.lastCommand !== null);
 
@@ -76,6 +88,8 @@ export function TerminalPane({ view, compact, onFocus, onClose, onRestart }: Ter
               {view.mem && <span title="Memory">{view.mem}</span>}
             </span>
           )}
+
+          <OpenFromButton n={view.n} onOpenFrom={onOpenFrom} />
 
           <button
             type="button"
@@ -147,5 +161,68 @@ export function TerminalPane({ view, compact, onFocus, onClose, onRestart }: Ter
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * The header's "+": a click opens a pane in this pane's folder right next to
+ * it; the small menu under it also offers a folder picker. Shift+click skips
+ * the menu and picks a folder directly.
+ */
+function OpenFromButton({ n, onOpenFrom }: { n: number; onOpenFrom: (how: OpenFromHow) => void }) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!root.current?.contains(event.target as Node | null)) setOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, [open]);
+
+  const choose = (how: OpenFromHow) => {
+    setOpen(false);
+    onOpenFrom(how);
+  };
+
+  return (
+    <div className="pane__open" ref={root}>
+      <button
+        type="button"
+        className={cx("btn", "btn--icon", open && "btn--icon-active")}
+        aria-label={`New pane next to pane ${n}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title="New pane next to this one (Shift+click: choose folder)"
+        onClick={(event) => {
+          event.stopPropagation();
+          if (event.shiftKey) choose("pick-folder");
+          else setOpen((value) => !value);
+        }}
+      >
+        +
+      </button>
+
+      {open && (
+        <div className="pane__menu" role="menu" onMouseDown={(event) => event.stopPropagation()}>
+          <button type="button" role="menuitem" className="pane__menu-item" onClick={() => choose("same-folder")}>
+            <span>New pane in this folder</span>
+            <span className="pane__menu-hint">same cwd</span>
+          </button>
+          <button type="button" role="menuitem" className="pane__menu-item" onClick={() => choose("pick-folder")}>
+            <span>New pane in another folder…</span>
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

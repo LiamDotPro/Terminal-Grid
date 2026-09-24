@@ -102,6 +102,7 @@
   /* Metrics ---------------------------------------------------------- */
   --chrome-h: 44px;
   --grid-gap: 10px;
+  --rail-w: 30px;
   --grid-pad: 4px 12px 12px;
   --radius-pane: 14px;
   --radius-sheet: 20px;

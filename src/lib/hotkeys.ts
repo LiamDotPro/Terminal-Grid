@@ -22,6 +22,8 @@ export type HotkeyAction =
   | { type: "toggle-tab" }
   | { type: "set-tab"; tab: "terminals" | "notes" }
   | { type: "open-settings" }
+  | { type: "cycle-layout" }
+  | { type: "notes-toggle"; panel: "tree" | "preview" }
   | { type: "toggle-fullscreen" };
 
 const ARROWS: Record<string, Direction> = {
@@ -64,6 +66,14 @@ export function matchHotkey(event: HotkeyEventLike, modifier: HotkeyModifier): H
   if (event.code === "F11" && !event.ctrlKey && !event.altKey && !event.metaKey) {
     return { type: "toggle-fullscreen" };
   }
+  // Plain Alt+Arrow moves focus to the neighbouring pane in that direction,
+  // whichever chord modifier is configured. Shells do not use the combination.
+  if (event.altKey && !event.ctrlKey && !event.shiftKey && !event.metaKey) {
+    const arrow = ARROWS[event.code];
+    if (arrow) return { type: "move-focus", dir: arrow };
+    return null;
+  }
+
   if (!event.ctrlKey || event.metaKey) return null;
   if (modifier === "ctrl+shift" ? !event.shiftKey : !event.altKey) return null;
 
@@ -96,6 +106,12 @@ export function matchHotkey(event: HotkeyEventLike, modifier: HotkeyModifier): H
       return { type: "set-tab", tab: "terminals" };
     case "KeyM":
       return { type: "set-tab", tab: "notes" };
+    case "KeyL":
+      return { type: "cycle-layout" };
+    case "KeyB":
+      return { type: "notes-toggle", panel: "tree" };
+    case "KeyP":
+      return { type: "notes-toggle", panel: "preview" };
     case "Comma":
       return { type: "open-settings" };
     default:
@@ -113,12 +129,16 @@ export function hotkeyHints(modifier: HotkeyModifier): HotkeyHint[] {
   const mod = modifierLabel(modifier);
   return [
     { label: "New pane", key: `${mod}+N` },
+    { label: "New pane in same folder", key: `${mod}+Shift+N` },
+    { label: "Stack: grid / side by side / stacked", key: `${mod}+L` },
     { label: "Close pane", key: `${mod}+W` },
     { label: "Restart shell", key: `${mod}+R` },
     { label: "Move pane", key: `${mod}+←↑↓→` },
+    { label: "Focus pane in a direction", key: "Alt+←↑↓→" },
     { label: "Focus pane 1–9", key: `${mod}+1…9` },
     { label: "Previous / next page", key: `${mod}+[ ]` },
     { label: "Notes / Terminals", key: `${mod}+Tab` },
+    { label: "Notes: hide / show list, preview", key: `${mod}+B / P` },
     { label: "Settings", key: `${mod}+,` },
   ];
 }

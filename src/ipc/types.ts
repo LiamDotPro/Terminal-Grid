@@ -88,8 +88,16 @@ export interface Session {
   activeTab: "terminals" | "notes";
   focusedId: TerminalId | null;
   page: number;
+  /** How panes stack; absent in sessions written before the option existed. */
+  layoutMode?: "grid" | "columns" | "rows";
   terminals: SavedTerminal[];
-  notes: { openRelPath: string | null; expandedFolders: string[] };
+  notes: {
+    openRelPath: string | null;
+    expandedFolders: string[];
+    /** Side panels folded away; absent in older sessions. */
+    treeCollapsed?: boolean;
+    previewCollapsed?: boolean;
+  };
 }
 
 // Errors ------------------------------------------------------------------

@@ -122,6 +122,14 @@ function useGlobalHotkeys(): void {
         case "open-settings":
           actions.setSettingsOpen(true);
           break;
+        case "cycle-layout":
+          actions.cycleLayoutMode();
+          break;
+        case "notes-toggle":
+          // Only meaningful on the notes tab; switch there so the key always does something visible.
+          if (state.activeTab !== "notes") actions.setTab("notes");
+          actions.toggleNotesPanel(action.panel);
+          break;
         case "toggle-fullscreen":
           void actions.toggleFullscreen();
           break;
@@ -130,7 +138,7 @@ function useGlobalHotkeys(): void {
 
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [actions, state.config.hotkeyModifier, state.focusedId, state.settingsOpen]);
+  }, [actions, state.activeTab, state.config.hotkeyModifier, state.focusedId, state.settingsOpen]);
 }
 
 /** Holding the chord modifier reveals the hotkey popover, as screen 1d notes. */

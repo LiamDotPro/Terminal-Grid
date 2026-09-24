@@ -12,6 +12,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import type { Config, HotkeyModifier, TerminalId } from "../ipc/types";
 import { isModifierHeld } from "../lib/hotkeys";
+import { clipboardIntent } from "./clipboard";
 import { parseOsc7, parseOsc133, parseOsc7777 } from "./osc";
 import { TERMINAL_THEME } from "./theme";
 
@@ -103,8 +104,19 @@ export class TerminalRegistry {
     term.open(host);
     loadWebgl(term);
 
-    // xterm must never swallow the app chord (design section 6).
-    term.attachCustomKeyEventHandler((event) => !isModifierHeld(event, this.modifier));
+    // xterm must never swallow the app chord (design section 6), and the
+    // system clipboard keys go to the browser so paste and copy just work.
+    term.attachCustomKeyEventHandler((event) => {
+      if (isModifierHeld(event, this.modifier)) return false;
+      const intent = clipboardIntent(event, term.hasSelection());
+      if (!intent) return true;
+      if (intent.kind === "copy" && event.type === "keydown") {
+        // The browser copies on this key; drop the selection afterwards so the
+        // next Ctrl+C is an interrupt again, as in Windows Terminal.
+        window.setTimeout(() => term.clearSelection(), 0);
+      }
+      return false;
+    });
 
     const disposables: IDisposable[] = [
       term.onData((data) => this.callbacks.onData(id, data)),

@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { PAGE_SIZE, layoutFor, moveTerminal, pageCount, pageOf, pageSlice } from "./layout";
+import {
+  PAGE_SIZE,
+  insertAfter,
+  layoutFor,
+  moveTerminal,
+  nextLayoutMode,
+  pageCount,
+  pageOf,
+  pageSlice,
+} from "./layout";
 
 describe("layoutFor", () => {
   it("follows the grid table from the design", () => {
@@ -12,6 +21,31 @@ describe("layoutFor", () => {
     expect(layoutFor(6)).toEqual({ cols: 3, rows: 2 });
     expect(layoutFor(7)).toEqual({ cols: 3, rows: 3 });
     expect(layoutFor(9)).toEqual({ cols: 3, rows: 3 });
+  });
+
+  it("stacks side by side or on top of each other in the other modes", () => {
+    expect(layoutFor(1, "columns")).toEqual({ cols: 1, rows: 1 });
+    expect(layoutFor(3, "columns")).toEqual({ cols: 3, rows: 1 });
+    expect(layoutFor(3, "rows")).toEqual({ cols: 1, rows: 3 });
+    expect(layoutFor(9, "rows")).toEqual({ cols: 1, rows: 9 });
+  });
+
+  it("cycles grid, side by side, stacked", () => {
+    expect(nextLayoutMode("grid")).toBe("columns");
+    expect(nextLayoutMode("columns")).toBe("rows");
+    expect(nextLayoutMode("rows")).toBe("grid");
+  });
+});
+
+describe("insertAfter", () => {
+  it("places the new id right behind its origin", () => {
+    expect(insertAfter(["a", "b", "c"], "x", "a")).toEqual(["a", "x", "b", "c"]);
+    expect(insertAfter(["a", "b", "c"], "x", "c")).toEqual(["a", "b", "c", "x"]);
+  });
+
+  it("appends without an origin or with an unknown one", () => {
+    expect(insertAfter(["a", "b"], "x", null)).toEqual(["a", "b", "x"]);
+    expect(insertAfter(["a", "b"], "x", "zz")).toEqual(["a", "b", "x"]);
   });
 });
 
@@ -66,6 +100,17 @@ describe("moveTerminal", () => {
     expect(moved[8]).toBe("t9");
     expect(moved[9]).toBe("t8");
     expect(pageOf(moved.indexOf("t8"))).toBe(1);
+  });
+
+  it("walks the list with the vertical arrows when stacked", () => {
+    expect(moveTerminal(six, "a", "down", "rows")).toEqual(["b", "a", "c", "d", "e", "f"]);
+    expect(moveTerminal(six, "b", "up", "rows")).toEqual(["b", "a", "c", "d", "e", "f"]);
+    expect(moveTerminal(six, "a", "right", "rows")).toBe(six);
+  });
+
+  it("only moves sideways when side by side", () => {
+    expect(moveTerminal(six, "a", "right", "columns")).toEqual(["b", "a", "c", "d", "e", "f"]);
+    expect(moveTerminal(six, "a", "down", "columns")).toBe(six);
   });
 
   it("returns the same array for an unknown id", () => {

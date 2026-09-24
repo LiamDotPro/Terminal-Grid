@@ -2,8 +2,18 @@
  * The single application reducer. Everything the UI renders is derived from
  * this state; async work lives in AppProvider and only ever dispatches here.
  */
-import { PAGE_SIZE, layoutFor, moveTerminal, pageCount, pageOf, pageSlice } from "../ipc/layout";
-import type { Direction } from "../ipc/layout";
+import {
+  LAYOUT_MODES,
+  PAGE_SIZE,
+  insertAfter,
+  layoutFor,
+  moveTerminal,
+  nextLayoutMode,
+  pageCount,
+  pageOf,
+  pageSlice,
+} from "../ipc/layout";
+import type { Direction, LayoutMode } from "../ipc/layout";
 import type {
   AgentEvent,
   Config,
@@ -44,6 +54,9 @@ export interface NotesState {
   /** Set when the open file changed on disk while the buffer was dirty. */
   conflict: { currentMtimeMs: number } | null;
   loading: boolean;
+  /** The tree and the preview fold away; the editor always stays. */
+  treeCollapsed: boolean;
+  previewCollapsed: boolean;
 }
 
 export interface AppState {
@@ -54,6 +67,8 @@ export interface AppState {
   terminals: Record<TerminalId, TerminalState>;
   focusedId: TerminalId | null;
   page: number;
+  /** How the panes on a page stack: both ways, side by side, or on top of each other. */
+  layoutMode: LayoutMode;
   notes: NotesState;
   settingsOpen: boolean;
   hotkeysOpen: boolean;
@@ -71,6 +86,7 @@ export const initialState: AppState = {
   terminals: {},
   focusedId: null,
   page: 0,
+  layoutMode: "grid",
   notes: {
     root: null,
     tree: [],
@@ -82,6 +98,8 @@ export const initialState: AppState = {
     saveState: "clean",
     conflict: null,
     loading: false,
+    treeCollapsed: false,
+    previewCollapsed: false,
   },
   settingsOpen: false,
   hotkeysOpen: false,
@@ -97,12 +115,15 @@ export type Action =
   | { type: "tab/toggle" }
   | { type: "page/set"; page: number }
   | { type: "page/step"; delta: -1 | 1 }
+  | { type: "layout/set"; mode: LayoutMode }
+  | { type: "layout/cycle" }
   | { type: "ui/settings"; open: boolean }
   | { type: "ui/hotkeys"; open: boolean }
   | { type: "ui/busy"; busy: boolean }
   | { type: "ui/error"; message: string | null }
   | { type: "tick"; now: number; activity: Record<TerminalId, number> }
-  | { type: "terminal/added"; info: TerminalInfo; focus: boolean }
+  /** `after` places the new pane right behind that one instead of at the end. */
+  | { type: "terminal/added"; info: TerminalInfo; focus: boolean; after?: TerminalId | null }
   | { type: "terminal/restored"; infos: TerminalInfo[]; focusedId: TerminalId | null; page: number }
   | { type: "terminal/removed"; id: TerminalId }
   | { type: "terminal/restarted"; info: TerminalInfo }
@@ -117,6 +138,8 @@ export type Action =
   | { type: "terminal/move"; dir: Direction }
   | { type: "terminal/move-focus"; dir: Direction }
   | { type: "notes/root"; root: string }
+  | { type: "notes/collapse"; panel: "tree" | "preview"; collapsed: boolean }
+  | { type: "notes/toggle-panel"; panel: "tree" | "preview" }
   | { type: "notes/tree"; tree: NoteNode[] }
   | { type: "notes/toggle-folder"; relPath: string }
   | { type: "notes/opening"; relPath: string }
@@ -138,10 +161,13 @@ export function reducer(state: AppState, action: Action): AppState {
         ready: true,
         config: action.config,
         activeTab: session?.activeTab ?? state.activeTab,
+        layoutMode: isLayoutMode(session?.layoutMode) ? session.layoutMode : state.layoutMode,
         notes: {
           ...state.notes,
           expanded: session?.notes.expandedFolders ?? [],
           openPath: session?.notes.openRelPath ?? null,
+          treeCollapsed: session?.notes.treeCollapsed ?? state.notes.treeCollapsed,
+          previewCollapsed: session?.notes.previewCollapsed ?? state.notes.previewCollapsed,
         },
       };
     }
@@ -164,6 +190,12 @@ export function reducer(state: AppState, action: Action): AppState {
 
     case "page/step":
       return { ...state, page: clampPage(state.page + action.delta, state.order.length) };
+
+    case "layout/set":
+      return state.layoutMode === action.mode ? state : { ...state, layoutMode: action.mode };
+
+    case "layout/cycle":
+      return { ...state, layoutMode: nextLayoutMode(state.layoutMode) };
 
     case "ui/settings":
       return { ...state, settingsOpen: action.open, hotkeysOpen: false };
@@ -189,13 +221,15 @@ export function reducer(state: AppState, action: Action): AppState {
     }
 
     case "terminal/added": {
-      const order = [...state.order, action.info.id];
+      const order = insertAfter(state.order, action.info.id, action.after ?? null);
       return {
         ...state,
         order,
         terminals: { ...state.terminals, [action.info.id]: newTerminal(action.info, state.now) },
         focusedId: action.focus ? action.info.id : state.focusedId,
-        page: action.focus ? pageOf(order.length - 1) : clampPage(state.page, order.length),
+        page: action.focus
+          ? pageOf(order.indexOf(action.info.id))
+          : clampPage(state.page, order.length),
       };
     }
 
@@ -308,7 +342,7 @@ export function reducer(state: AppState, action: Action): AppState {
 
     case "terminal/move": {
       if (!state.focusedId) return state;
-      const order = moveTerminal(state.order, state.focusedId, action.dir);
+      const order = moveTerminal(state.order, state.focusedId, action.dir, state.layoutMode);
       if (order === state.order) return state;
       return { ...state, order, page: pageOf(order.indexOf(state.focusedId)) };
     }
@@ -320,6 +354,17 @@ export function reducer(state: AppState, action: Action): AppState {
 
     case "notes/root":
       return { ...state, notes: { ...state.notes, root: action.root } };
+
+    case "notes/collapse": {
+      const key = action.panel === "tree" ? "treeCollapsed" : "previewCollapsed";
+      if (state.notes[key] === action.collapsed) return state;
+      return { ...state, notes: { ...state.notes, [key]: action.collapsed } };
+    }
+
+    case "notes/toggle-panel": {
+      const key = action.panel === "tree" ? "treeCollapsed" : "previewCollapsed";
+      return { ...state, notes: { ...state.notes, [key]: !state.notes[key] } };
+    }
 
     case "notes/tree":
       return { ...state, notes: { ...state.notes, tree: action.tree } };
@@ -446,6 +491,10 @@ function clampPage(page: number, total: number): number {
   return Math.min(Math.max(0, page), pageCount(total) - 1);
 }
 
+function isLayoutMode(value: unknown): value is LayoutMode {
+  return typeof value === "string" && (LAYOUT_MODES as readonly string[]).includes(value);
+}
+
 /** The terminal one cell away from the focused one, inside the current page. */
 function neighbourId(state: AppState, dir: Direction): TerminalId | null {
   if (!state.focusedId) return null;
@@ -453,10 +502,17 @@ function neighbourId(state: AppState, dir: Direction): TerminalId | null {
   if (index === -1) return null;
   const page = pageOf(index);
   const onPage = pageSlice(state.order, page);
-  const { cols } = layoutFor(onPage.length);
+  const { cols } = layoutFor(onPage.length, state.layoutMode);
   const local = index - page * PAGE_SIZE;
   const row = Math.floor(local / cols);
   const col = local % cols;
+
+  // Stacked in one column, up and down walk the list and nothing lies sideways.
+  if (state.layoutMode === "rows") {
+    if (dir === "up") return local > 0 ? (onPage[local - 1] ?? null) : null;
+    if (dir === "down") return onPage[local + 1] ?? null;
+    return null;
+  }
 
   let target: number | null = null;
   if (dir === "up" && row > 0) target = local - cols;
@@ -483,11 +539,17 @@ export function toSession(state: AppState): Session {
     activeTab: state.activeTab,
     focusedId: state.focusedId,
     page: state.page,
+    layoutMode: state.layoutMode,
     terminals: state.order.map((id) => ({
       id,
       cwd: state.terminals[id]?.info.cwd ?? "",
       labelOverride: null,
     })),
-    notes: { openRelPath: state.notes.openPath, expandedFolders: state.notes.expanded },
+    notes: {
+      openRelPath: state.notes.openPath,
+      expandedFolders: state.notes.expanded,
+      treeCollapsed: state.notes.treeCollapsed,
+      previewCollapsed: state.notes.previewCollapsed,
+    },
   };
 }

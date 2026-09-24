@@ -9,6 +9,64 @@
   gap: var(--grid-gap);
 }
 
+/* A side panel folded away: the editor takes its width, the rail keeps the edge. */
+.notes--no-tree {
+  grid-template-columns: var(--rail-w) minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.notes--no-preview {
+  grid-template-columns: 272px minmax(0, 1fr) var(--rail-w);
+}
+
+.notes--no-tree.notes--no-preview {
+  grid-template-columns: var(--rail-w) minmax(0, 1fr) var(--rail-w);
+}
+
+.panel-head__collapse {
+  flex: none;
+  font-size: 16px;
+  color: var(--text-45);
+}
+
+.rail {
+  width: var(--rail-w);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-radius: var(--radius-pane);
+  background: var(--glass-panel);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--edge);
+  box-shadow: var(--shadow-panel);
+  color: var(--text-55);
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.rail:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: var(--edge-strong);
+  color: var(--text-strong);
+}
+
+.rail__chevron {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.rail__label {
+  writing-mode: vertical-rl;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.rail--right .rail__label {
+  transform: rotate(180deg);
+}
+
 .notes__panel {
   display: flex;
   flex-direction: column;

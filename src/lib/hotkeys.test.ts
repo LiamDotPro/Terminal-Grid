@@ -27,6 +27,9 @@ describe("matchHotkey with Ctrl+Alt", () => {
     expect(matchHotkey(ctrlAlt("BracketRight"), "ctrl+alt")).toEqual({ type: "page", delta: 1 });
     expect(matchHotkey(ctrlAlt("Tab"), "ctrl+alt")).toEqual({ type: "toggle-tab" });
     expect(matchHotkey(ctrlAlt("Comma"), "ctrl+alt")).toEqual({ type: "open-settings" });
+    expect(matchHotkey(ctrlAlt("KeyL"), "ctrl+alt")).toEqual({ type: "cycle-layout" });
+    expect(matchHotkey(ctrlAlt("KeyB"), "ctrl+alt")).toEqual({ type: "notes-toggle", panel: "tree" });
+    expect(matchHotkey(ctrlAlt("KeyP"), "ctrl+alt")).toEqual({ type: "notes-toggle", panel: "preview" });
   });
 
   it("uses Shift to qualify the chord", () => {
@@ -37,6 +40,18 @@ describe("matchHotkey with Ctrl+Alt", () => {
     expect(matchHotkey(ctrlAlt("KeyN", { shiftKey: true }), "ctrl+alt")).toEqual({
       type: "new-pane-here",
     });
+  });
+
+  it("moves focus with plain Alt+Arrow under either modifier", () => {
+    expect(matchHotkey(key("ArrowRight", { altKey: true }), "ctrl+alt")).toEqual({
+      type: "move-focus",
+      dir: "right",
+    });
+    expect(matchHotkey(key("ArrowDown", { altKey: true }), "ctrl+shift")).toEqual({
+      type: "move-focus",
+      dir: "down",
+    });
+    expect(matchHotkey(key("ArrowDown", { altKey: true, shiftKey: true }), "ctrl+alt")).toBeNull();
   });
 
   it("ignores the chord without the modifier, and anything with Meta", () => {
@@ -88,7 +103,10 @@ describe("isModifierHeld", () => {
 describe("hotkeyHints", () => {
   it("renders every label with the active modifier", () => {
     const hints = hotkeyHints("ctrl+shift");
-    expect(hints).toHaveLength(8);
-    expect(hints.every((hint) => hint.key.startsWith("Ctrl+Shift"))).toBe(true);
+    expect(hints).toHaveLength(12);
+    // Alt+Arrow focus movement is the one binding that does not use the chord.
+    const chorded = hints.filter((hint) => !hint.key.startsWith("Alt+"));
+    expect(chorded).toHaveLength(hints.length - 1);
+    expect(chorded.every((hint) => hint.key.startsWith("Ctrl+Shift"))).toBe(true);
   });
 });

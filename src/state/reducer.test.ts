@@ -50,6 +50,46 @@ describe("terminals", () => {
     expect(after.focusedId).toBe("t2");
   });
 
+  it("places a pane opened from another one right after it", () => {
+    let state = withTerminals(3);
+    state = reducer(state, { type: "terminal/added", info: info("x"), focus: true, after: "t0" });
+    expect(state.order).toEqual(["t0", "x", "t1", "t2"]);
+    expect(state.focusedId).toBe("x");
+    expect(state.page).toBe(0);
+  });
+
+  it("switches stacking and restores it from the session", () => {
+    let state = reducer(withTerminals(3), { type: "layout/set", mode: "rows" });
+    expect(state.layoutMode).toBe("rows");
+    state = reducer(state, { type: "layout/cycle" });
+    expect(state.layoutMode).toBe("grid");
+
+    const restored = reducer(initialState, {
+      type: "ready",
+      config: initialState.config,
+      session: {
+        version: 1,
+        activeTab: "terminals",
+        focusedId: null,
+        page: 0,
+        layoutMode: "columns",
+        terminals: [],
+        notes: { openRelPath: null, expandedFolders: [] },
+      },
+    });
+    expect(restored.layoutMode).toBe("columns");
+  });
+
+  it("moves focus along the stack when panes are stacked vertically", () => {
+    let state = reducer(withTerminals(4), { type: "layout/set", mode: "rows" });
+    state = reducer(state, { type: "terminal/focus", id: "t0" });
+    expect(reducer(state, { type: "terminal/move-focus", dir: "right" }).focusedId).toBe("t0");
+    expect(reducer(state, { type: "terminal/move-focus", dir: "down" }).focusedId).toBe("t1");
+    state = reducer(state, { type: "layout/set", mode: "columns" });
+    expect(reducer(state, { type: "terminal/move-focus", dir: "down" }).focusedId).toBe("t0");
+    expect(reducer(state, { type: "terminal/move-focus", dir: "right" }).focusedId).toBe("t1");
+  });
+
   it("clamps the page when the last terminal on it goes away", () => {
     let state = withTerminals(10);
     state = reducer(state, { type: "page/set", page: 1 });
@@ -108,6 +148,34 @@ describe("agent lifecycle", () => {
 });
 
 describe("notes", () => {
+  it("folds the tree and the preview away independently", () => {
+    let state = reducer(initialState, { type: "notes/toggle-panel", panel: "preview" });
+    expect(state.notes.previewCollapsed).toBe(true);
+    expect(state.notes.treeCollapsed).toBe(false);
+    state = reducer(state, { type: "notes/toggle-panel", panel: "tree" });
+    expect(state.notes.treeCollapsed).toBe(true);
+    state = reducer(state, { type: "notes/collapse", panel: "preview", collapsed: false });
+    expect(state.notes.previewCollapsed).toBe(false);
+    expect(state.notes.treeCollapsed).toBe(true);
+  });
+
+  it("restores the folded panels from the session", () => {
+    const state = reducer(initialState, {
+      type: "ready",
+      config: initialState.config,
+      session: {
+        version: 1,
+        activeTab: "notes",
+        focusedId: null,
+        page: 0,
+        terminals: [],
+        notes: { openRelPath: null, expandedFolders: [], treeCollapsed: true },
+      },
+    });
+    expect(state.notes.treeCollapsed).toBe(true);
+    expect(state.notes.previewCollapsed).toBe(false);
+  });
+
   it("tracks the dirty flag against the last saved content", () => {
     let state = reducer(initialState, {
       type: "notes/opened",

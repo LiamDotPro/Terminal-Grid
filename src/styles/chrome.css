@@ -19,17 +19,18 @@
 }
 
 .chrome__mark {
-  width: 10px;
-  height: 10px;
   flex: none;
-  border-radius: 3px;
-  background: linear-gradient(135deg, var(--accent), var(--accent-violet));
+  display: block;
+  /* The outlined cells; the active cell carries its own gradient. */
+  color: rgba(238, 241, 246, 0.42);
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
 }
 
 .chrome__title {
-  font-size: 12px;
-  letter-spacing: 0.02em;
-  color: var(--text-70);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-85);
 }
 
 .chrome__center {
@@ -126,6 +127,43 @@
   font-size: 11.5px;
   color: rgba(238, 241, 246, 0.8);
   padding: 0 4px;
+}
+
+/* Stacking mode --------------------------------------------------------- */
+
+.layout-switch {
+  display: flex;
+  gap: 2px;
+  height: 28px;
+  padding: 0 3px;
+  border-radius: 8px;
+  background: var(--fill-1);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  margin-right: 2px;
+}
+
+.layout-switch__item {
+  width: 24px;
+  height: 22px;
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: var(--text-45);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.layout-switch__item:hover {
+  background: var(--fill-hover);
+  color: var(--text-strong);
+}
+
+.layout-switch__item--active,
+.layout-switch__item--active:hover {
+  background: var(--fill-4);
+  color: var(--accent-bright);
+  box-shadow: var(--shadow-seg);
 }
 
 /* Actions -------------------------------------------------------------- */

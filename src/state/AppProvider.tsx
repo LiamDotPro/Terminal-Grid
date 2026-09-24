@@ -30,6 +30,7 @@ import type {
   TerminalId,
   TerminalInfo,
 } from "../ipc/types";
+import type { LayoutMode } from "../ipc/layout";
 import { errorMessage, isAppError } from "../lib/appError";
 import { matchesAgentPattern } from "../terminals/osc";
 import { terminalRegistry } from "../terminals/registry";
@@ -44,12 +45,21 @@ export interface AppActions {
   toggleTab(): void;
   setPage(page: number): void;
   stepPage(delta: -1 | 1): void;
+  setLayoutMode(mode: LayoutMode): void;
+  cycleLayoutMode(): void;
   setHotkeysOpen(open: boolean): void;
   setSettingsOpen(open: boolean): void;
   dismissError(): void;
 
+  /** Folder picker; the pane goes after the focused one. */
   newTerminal(): Promise<void>;
+  /** Same folder as the focused pane, placed right after it. */
   newTerminalHere(): Promise<void>;
+  /**
+   * Opens a pane next to `from`: in the same folder, or after a folder
+   * picker that starts in that folder.
+   */
+  newTerminalFrom(from: TerminalId, how: "same-folder" | "pick-folder"): Promise<void>;
   closeTerminal(id: TerminalId): Promise<void>;
   restartTerminal(id: TerminalId): Promise<void>;
   focusTerminal(id: TerminalId): void;
@@ -71,6 +81,9 @@ export interface AppActions {
   reloadNote(): Promise<void>;
   keepMine(): Promise<void>;
   toggleFolder(relPath: string): void;
+  /** Folds the notes tree or the preview away, or brings it back. */
+  collapseNotesPanel(panel: "tree" | "preview", collapsed: boolean): void;
+  toggleNotesPanel(panel: "tree" | "preview"): void;
   createNode(parentRelPath: string | null, kind: NodeKind): Promise<void>;
   renameNode(relPath: string, name: string): Promise<void>;
   deleteNode(relPath: string, kind: NodeKind): Promise<void>;
@@ -375,11 +388,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Actions --------------------------------------------------------------
 
   const actions = useMemo<AppActions>(() => {
-    const spawn = async (cwd: string | undefined, focus: boolean) => {
+    const spawn = async (cwd: string | undefined, focus: boolean, after: TerminalId | null) => {
       dispatch({ type: "ui/busy", busy: true });
       try {
         const info = await call("create_terminal", { cwd, cols: 80, rows: 24 });
-        dispatch({ type: "terminal/added", info, focus });
+        dispatch({ type: "terminal/added", info, focus, after });
         void refreshGit(info.id);
         void call("set_focused_terminal", { id: info.id }).catch(() => {});
       } catch (error) {
@@ -394,8 +407,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return typeof picked === "string" ? picked : null;
     };
 
+    /** The pane a new one should land behind: the origin if given, else the focused pane. */
+    const anchorFor = (from: TerminalId | null) => {
+      const current = stateRef.current;
+      const id = from ?? current.focusedId;
+      return id && current.terminals[id] ? id : null;
+    };
+
+    const openFrom = async (from: TerminalId | null, how: "same-folder" | "pick-folder") => {
+      const anchor = anchorFor(from);
+      const anchorCwd = anchor ? stateRef.current.terminals[anchor]?.info.cwd : undefined;
+      try {
+        if (how === "same-folder") {
+          await spawn(anchorCwd, true, anchor);
+          return;
+        }
+        const folder = await pickFolder("Open folder in a new pane", anchorCwd);
+        if (folder) await spawn(folder, true, anchor);
+      } catch (error) {
+        fail(error);
+      }
+    };
+
     return {
       setTab: (tab) => dispatch({ type: "tab/set", tab }),
+      setLayoutMode: (mode) => dispatch({ type: "layout/set", mode }),
+      cycleLayoutMode: () => dispatch({ type: "layout/cycle" }),
       toggleTab: () => dispatch({ type: "tab/toggle" }),
       setPage: (page) => dispatch({ type: "page/set", page }),
       stepPage: (delta) => dispatch({ type: "page/step", delta }),
@@ -403,20 +440,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setSettingsOpen: (open) => dispatch({ type: "ui/settings", open }),
       dismissError: () => dispatch({ type: "ui/error", message: null }),
 
-      newTerminal: async () => {
-        try {
-          const folder = await pickFolder("Open folder in a new pane");
-          if (folder) await spawn(folder, true);
-        } catch (error) {
-          fail(error);
-        }
-      },
-
-      newTerminalHere: async () => {
-        const current = stateRef.current;
-        const cwd = current.focusedId ? current.terminals[current.focusedId]?.info.cwd : undefined;
-        await spawn(cwd, true);
-      },
+      newTerminal: () => openFrom(null, "pick-folder"),
+      newTerminalHere: () => openFrom(null, "same-folder"),
+      newTerminalFrom: (from, how) => openFrom(from, how),
 
       closeTerminal: async (id) => {
         const running = stateRef.current.terminals[id]?.agent;
@@ -533,6 +559,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       },
 
+      collapseNotesPanel: (panel, collapsed) =>
+        dispatch({ type: "notes/collapse", panel, collapsed }),
+      toggleNotesPanel: (panel) => dispatch({ type: "notes/toggle-panel", panel }),
       toggleFolder: (relPath) => dispatch({ type: "notes/toggle-folder", relPath }),
 
       createNode: async (parentRelPath, kind) => {
