@@ -1,6 +1,6 @@
 [package]
 name = "terminal-grid"
-version = "0.1.0"
+version = "0.2.0"
 description = "Terminal grid with git labels, worktree view and markdown notes"
 edition = "2021"
 
