@@ -130,6 +130,17 @@ select {
   background-attachment: fixed;
 }
 
+/* A free-floating window gets a visible edge, which is also where it can be
+   pulled to resize. Fullscreen and maximized windows run edge to edge. */
+.app--windowed::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  pointer-events: none;
+}
+
 .app__body {
   flex: 1;
   min-height: 0;

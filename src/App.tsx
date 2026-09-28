@@ -7,6 +7,7 @@ import { PaneGrid } from "./components/PaneGrid";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { cx } from "./lib/cx";
 import { isModifierHeld, matchHotkey } from "./lib/hotkeys";
+import { useWindowFrame } from "./lib/windowFrame";
 import { AppProvider, useAppActions, useAppState } from "./state/AppProvider";
 
 /** How long the chord modifier has to be held before the cheat sheet appears. */
@@ -34,12 +35,13 @@ function Shell() {
   const actions = useAppActions();
   useGlobalHotkeys();
   useModifierHint();
+  const frame = useWindowFrame();
 
   const isTerminals = state.activeTab === "terminals";
 
   return (
-    <div className="app">
-      <Chrome />
+    <div className={cx("app", frame === "windowed" && "app--windowed")}>
+      <Chrome frame={frame} />
 
       <div className="app__body">
         <div className={cx("view", isTerminals && "view--active")} aria-hidden={!isTerminals}>

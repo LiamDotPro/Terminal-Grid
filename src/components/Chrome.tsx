@@ -1,6 +1,7 @@
 import { LAYOUT_MODES, type LayoutMode } from "../ipc/layout";
 import { cx } from "../lib/cx";
 import { modifierLabel } from "../lib/hotkeys";
+import type { WindowFrame } from "../lib/windowFrame";
 import { useAppActions, useAppState } from "../state/AppProvider";
 import { totalPages } from "../state/reducer";
 
@@ -65,26 +66,42 @@ function LayoutGlyph({ mode }: { mode: LayoutMode }) {
   );
 }
 
+/** Four corner brackets: pointing out to enter full screen, in to leave it. */
+function FullscreenGlyph({ exit = false }: { exit?: boolean }) {
+  const d = exit
+    ? "M4.5 1v3.5H1M9.5 1v3.5H13M4.5 13V9.5H1M9.5 13V9.5H13"
+    : "M1 4.5V1h3.5M13 4.5V1H9.5M1 9.5V13h3.5M13 9.5V13H9.5";
+  return (
+    <svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true" focusable="false">
+      <path d={d} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 /**
  * The window bar: brand, tab switcher, pager, pane/hotkey/settings actions and
  * the window controls. It is also the drag region, so the app can run without
  * native decorations the way the design draws it.
  */
-export function Chrome() {
+export function Chrome({ frame }: { frame: WindowFrame }) {
   const state = useAppState();
   const actions = useAppActions();
   const pages = totalPages(state);
   const isTerminals = state.activeTab === "terminals";
   const showPager = isTerminals && pages > 1;
+  const fullscreen = frame === "fullscreen";
+  // Nothing to drag while fullscreen, and a double-click there would maximize
+  // the window underneath without anything visibly changing.
+  const dragRegion = fullscreen ? undefined : "";
 
   return (
-    <header className="chrome" data-tauri-drag-region>
-      <div className="chrome__brand" data-tauri-drag-region>
+    <header className="chrome" data-tauri-drag-region={dragRegion}>
+      <div className="chrome__brand" data-tauri-drag-region={dragRegion}>
         <BrandMark />
         <span className="chrome__title">Terminal Grid</span>
       </div>
 
-      <div className="chrome__center" data-tauri-drag-region>
+      <div className="chrome__center" data-tauri-drag-region={dragRegion}>
         <div className="tabs" role="tablist" aria-label="Sections">
           <button
             type="button"
@@ -203,14 +220,38 @@ export function Chrome() {
           >
             —
           </button>
-          <button
-            type="button"
-            className="winbtn winbtn--maximize"
-            aria-label="Maximize"
-            onClick={() => void actions.toggleMaximize()}
-          >
-            ▢
-          </button>
+          {fullscreen ? (
+            <button
+              type="button"
+              className="winbtn winbtn--fullscreen"
+              title="Exit full screen (F11)"
+              onClick={() => void actions.toggleFullscreen()}
+            >
+              <FullscreenGlyph exit />
+              Full screen
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="winbtn"
+                aria-label="Full screen"
+                title="Full screen (F11)"
+                onClick={() => void actions.toggleFullscreen()}
+              >
+                <FullscreenGlyph />
+              </button>
+              <button
+                type="button"
+                className="winbtn winbtn--maximize"
+                aria-label={frame === "maximized" ? "Restore" : "Maximize"}
+                title={frame === "maximized" ? "Restore" : "Maximize"}
+                onClick={() => void actions.toggleMaximize()}
+              >
+                {frame === "maximized" ? "❐" : "▢"}
+              </button>
+            </>
+          )}
           <button
             type="button"
             className="winbtn winbtn--close"

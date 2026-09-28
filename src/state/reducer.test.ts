@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TerminalInfo } from "../ipc/types";
-import { paneStatus } from "./model";
+import { paneStatus, toPaneView } from "./model";
 import { initialState, reducer, totalPages, visibleIds, type AppState } from "./reducer";
 
 const info = (id: string, cwd = `C:/dev/${id}`): TerminalInfo => ({
@@ -144,6 +144,49 @@ describe("agent lifecycle", () => {
     state = reducer(state, { type: "terminal/exited", id: "t0", code: 1 });
     expect(paneStatus(state.terminals.t0, state.now, 4000)).toBe("exited");
     expect(state.terminals.t0.agent).toBeNull();
+  });
+});
+
+describe("agent task", () => {
+  const ctx = (state: AppState) => ({
+    now: state.now,
+    idleTimeoutMs: 4000,
+    focusedId: state.focusedId,
+    paneNumbers: new Map<string, number>(),
+  });
+  const report = (state: AppState, task: string | null) =>
+    reducer(state, { type: "terminal/task", id: "t0", task, updatedAt: state.now - 12_000 });
+  const started = (state: AppState) =>
+    reducer(state, {
+      type: "terminal/agent",
+      event: { id: "t0", event: "started", name: "claude", source: "process" },
+    });
+
+  it("shows the reported task and how long ago it came in", () => {
+    const state = report(started(withTerminals(1)), "Fixing the login test");
+    const view = toPaneView(state.terminals.t0, 0, ctx(state));
+    expect(view.canShowTask).toBe(true);
+    expect(view.task).toBe("Fixing the login test");
+    expect(view.taskAge).toBe("12s");
+  });
+
+  it("offers the task button while an agent runs, even before a report", () => {
+    const idle = withTerminals(1);
+    expect(toPaneView(idle.terminals.t0, 0, ctx(idle)).canShowTask).toBe(false);
+    const running = started(idle);
+    expect(toPaneView(running.terminals.t0, 0, ctx(running)).canShowTask).toBe(true);
+  });
+
+  it("an emptied file clears the task", () => {
+    const state = report(report(started(withTerminals(1)), "Wiring IPC"), null);
+    expect(state.terminals.t0.task).toBeNull();
+  });
+
+  it("a new agent run drops the previous run's task, an exit drops it too", () => {
+    const reported = report(started(withTerminals(1)), "Old work");
+    expect(started(reported).terminals.t0.task).toBeNull();
+    const exited = reducer(reported, { type: "terminal/exited", id: "t0", code: 0 });
+    expect(exited.terminals.t0.task).toBeNull();
   });
 });
 

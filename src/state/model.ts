@@ -22,10 +22,17 @@ export interface TerminalStats {
   memBytes: number;
 }
 
+export interface AgentTask {
+  text: string;
+  updatedAt: number;
+}
+
 export interface TerminalState {
   info: TerminalInfo;
   git: GitInfo | null;
   agent: AgentRun | null;
+  /** Last task line the agent reported through its task file. */
+  task: AgentTask | null;
   /** Set when an agent finished and the user has not looked at the pane yet. */
   finished: FinishedMark | null;
   lastCommand: string | null;
@@ -64,6 +71,11 @@ export interface PaneView {
   mem: string | null;
   lastCommand: string | null;
   worktrees: WorktreeChip[];
+  /** The header's task button shows while an agent runs or a task is known. */
+  canShowTask: boolean;
+  task: string | null;
+  /** How long ago the task was reported: "12s", "3m". */
+  taskAge: string | null;
 }
 
 export function paneStatus(term: TerminalState, now: number, idleTimeoutMs: number): PaneStatus {
@@ -105,6 +117,9 @@ export function toPaneView(term: TerminalState, index: number, ctx: PaneViewCont
     mem: showStats && term.stats ? formatBytes(term.stats.memBytes) : null,
     lastCommand: status === "exited" ? null : term.lastCommand,
     worktrees: toWorktreeChips(term, ctx.paneNumbers),
+    canShowTask: status !== "exited" && (term.agent !== null || term.task !== null),
+    task: status === "exited" ? null : (term.task?.text ?? null),
+    taskAge: term.task ? formatElapsed(ctx.now - term.task.updatedAt) : null,
   };
 }
 

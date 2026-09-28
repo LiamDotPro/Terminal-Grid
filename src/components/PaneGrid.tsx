@@ -61,6 +61,7 @@ export function PaneGrid() {
                   onOpenFrom={(how) => void actions.newTerminalFrom(id, how)}
                   onClose={() => void actions.closeTerminal(id)}
                   onRestart={() => void actions.restartTerminal(id)}
+                  onAskForTask={() => void actions.askAgentForTask(id)}
                 />
               );
             })}

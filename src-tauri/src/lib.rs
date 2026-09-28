@@ -64,8 +64,11 @@ pub fn run() {
                 .clone()
                 .unwrap_or_else(notes::NotesService::default_root);
 
+            let pty = pty::PtyManager::new(config_dir);
+            agent::task::clear_task_dir(&pty.tasks_dir());
+
             let app_state = AppState {
-                pty: pty::PtyManager::new(config_dir),
+                pty,
                 git: git::GitService::new(),
                 agent: agent::AgentWatcher::new(),
                 notes: notes::NotesService::new(notes_root),

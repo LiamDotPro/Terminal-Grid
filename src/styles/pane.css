@@ -300,6 +300,115 @@
   color: var(--text-45);
 }
 
+/* Agent task (design section 5.5) -------------------------------------- */
+
+.pane__task-toggle {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 11px;
+  color: var(--text-55);
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.pane__task-toggle:hover,
+.pane__task-toggle--open {
+  background: var(--fill-hover);
+  color: var(--text-strong);
+}
+
+/* A reported task lights the dot, so a glance says whether there is one. */
+.pane__task-toggle--reported::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.pane__task {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  z-index: 20;
+  width: min(340px, calc(100% - 20px));
+  padding: 10px 12px 12px;
+  border-radius: 12px;
+  background: var(--glass-sheet);
+  backdrop-filter: var(--glass-blur-pop);
+  border: 1px solid var(--edge-strong);
+  box-shadow: var(--shadow-pop);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: pane-task-in 140ms ease-out;
+}
+
+@keyframes pane-task-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.pane__task-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pane__task-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-55);
+}
+
+.pane__task-age {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-40);
+}
+
+.pane__task-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-90);
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+
+.pane__task-empty {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-65);
+  text-wrap: pretty;
+}
+
+.pane__task-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pane__task-actions .btn--quiet {
+  height: 26px;
+  font-size: 11.5px;
+}
+
+.pane__task-actions .btn--quiet:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 /* Body ----------------------------------------------------------------- */
 
 .pane__body {

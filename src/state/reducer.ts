@@ -133,6 +133,7 @@ export type Action =
   | { type: "terminal/agent"; event: AgentEvent }
   | { type: "terminal/stats"; id: TerminalId; cpuPercent: number; memBytes: number }
   | { type: "terminal/command"; id: TerminalId; command: string }
+  | { type: "terminal/task"; id: TerminalId; task: string | null; updatedAt: number }
   | { type: "terminal/focus"; id: TerminalId | null }
   | { type: "terminal/focus-index"; index: number }
   | { type: "terminal/move"; dir: Direction }
@@ -272,6 +273,7 @@ export function reducer(state: AppState, action: Action): AppState {
         ...term,
         info: { ...term.info, exited: true, exitCode: action.code },
         agent: null,
+        task: null,
         finished: null,
         stats: null,
       }));
@@ -292,6 +294,8 @@ export function reducer(state: AppState, action: Action): AppState {
           return {
             ...term,
             agent: { name, startedAt: state.now },
+            // A task from the previous run would describe the wrong work.
+            task: null,
             finished: null,
             lastOutputAt: state.now,
           };
@@ -318,6 +322,12 @@ export function reducer(state: AppState, action: Action): AppState {
 
     case "terminal/command":
       return patchTerminal(state, action.id, (term) => ({ ...term, lastCommand: action.command }));
+
+    case "terminal/task":
+      return patchTerminal(state, action.id, (term) => ({
+        ...term,
+        task: action.task === null ? null : { text: action.task, updatedAt: action.updatedAt },
+      }));
 
     case "terminal/focus": {
       if (action.id === null) return { ...state, focusedId: null };
@@ -468,6 +478,7 @@ function newTerminal(info: TerminalInfo, now: number): TerminalState {
     info,
     git: null,
     agent: null,
+    task: null,
     finished: null,
     lastCommand: null,
     stats: null,

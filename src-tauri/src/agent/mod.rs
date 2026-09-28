@@ -6,7 +6,10 @@
 //! `node.exe`, so matching the full command line is required.
 //!
 //! The same tick samples cpu and memory for the session's process tree, which
-//! is what the pane header shows next to the agent badge.
+//! is what the pane header shows next to the agent badge, and picks up the
+//! task line agents report through their task file (see `task`).
+
+pub mod task;
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -181,6 +184,7 @@ impl AgentWatcher {
         std::thread::spawn(move || {
             let mut system = System::new();
             let mut states: HashMap<TerminalId, AgentState> = HashMap::new();
+            let mut tasks = task::TaskTracker::default();
 
             while !shared.stop.load(Ordering::SeqCst) {
                 {
@@ -191,6 +195,7 @@ impl AgentWatcher {
                         tick(&app, &mut system, &mut states, &shells, &patterns);
                     }
                     states.retain(|id, _| shells.iter().any(|(shell_id, _)| shell_id == id));
+                    tasks.poll(&app, &state.pty.task_files());
                 }
 
                 let mut woken = shared.wake.lock().expect("agent wake");

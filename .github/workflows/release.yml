@@ -1,0 +1,79 @@
+# Builds the Windows installers and attaches them to a GitHub Release.
+#
+# Trigger by pushing a tag that matches the version in package.json,
+# src-tauri/Cargo.toml and src-tauri/tauri.conf.json:
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# The release is created as a draft so the notes can be edited before it goes
+# public. "Run workflow" from the Actions tab builds without publishing.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+
+      - name: Frontend tests
+        run: npm test
+
+      - name: Core tests
+        run: cargo test
+        working-directory: src-tauri
+
+      - name: Build installers and publish draft release
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tauriScript: npm run tauri
+          # On a manual run there is no tag, so the action only builds and the
+          # installers are kept as workflow artifacts.
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          releaseName: Terminal Grid ${{ github.ref_name }}
+          releaseBody: |
+            Windows installers are attached below.
+
+            - `Terminal Grid_<version>_x64-setup.exe` — NSIS installer, per user, no admin required (recommended)
+            - `Terminal Grid_<version>_x64_en-US.msi` — MSI for scripted or per machine installs
+
+            The installer bootstraps the WebView2 runtime if it is missing.
+          releaseDraft: true
+          prerelease: false
+          uploadWorkflowArtifacts: true
+
+      - name: Package unsigned MSIX for the Microsoft Store
+        shell: pwsh
+        run: .\scripts\pack-msix.ps1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: msix-unsigned
+          path: src-tauri/target/msix/*.msix
+          if-no-files-found: error

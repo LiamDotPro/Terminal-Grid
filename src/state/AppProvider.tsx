@@ -27,10 +27,12 @@ import type {
   NotesChangedEvent,
   OutputEvent,
   StatsEvent,
+  TaskEvent,
   TerminalId,
   TerminalInfo,
 } from "../ipc/types";
 import type { LayoutMode } from "../ipc/layout";
+import { TASK_REPORT_PROMPT } from "../lib/agentTask";
 import { errorMessage, isAppError } from "../lib/appError";
 import { matchesAgentPattern } from "../terminals/osc";
 import { terminalRegistry } from "../terminals/registry";
@@ -39,6 +41,7 @@ import { initialState, reducer, toSession, type AppState } from "./reducer";
 const AUTOSAVE_DELAY_MS = 600;
 const SESSION_DEBOUNCE_MS = 1000;
 const TICK_MS = 1000;
+const SUBMIT_DELAY_MS = 150;
 
 export interface AppActions {
   setTab(tab: "terminals" | "notes"): void;
@@ -64,6 +67,8 @@ export interface AppActions {
   restartTerminal(id: TerminalId): Promise<void>;
   focusTerminal(id: TerminalId): void;
   focusIndex(index: number): void;
+  /** Types the task report prompt into the pane's agent and submits it. */
+  askAgentForTask(id: TerminalId): Promise<void>;
   movePane(dir: "up" | "down" | "left" | "right"): void;
   moveFocus(dir: "up" | "down" | "left" | "right"): void;
 
@@ -113,6 +118,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
+
+  // The app launches fullscreen from a normal (unmaximized) window.
+  const maximizedBeforeFullscreen = useRef(false);
 
   const fail = useCallback((error: unknown) => {
     dispatch({ type: "ui/error", message: errorMessage(error) });
@@ -202,6 +210,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
           id: event.id,
           cpuPercent: event.cpuPercent,
           memBytes: event.memBytes,
+        });
+      }),
+      subscribe<TaskEvent>(EVENTS.task, (event) => {
+        dispatch({
+          type: "terminal/task",
+          id: event.id,
+          task: event.task,
+          updatedAt: event.updatedAtMs,
         });
       }),
       subscribe<NotesChangedEvent>(EVENTS.notesChanged, (event) => {
@@ -485,6 +501,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
         void refreshGit(id);
       },
 
+      askAgentForTask: async (id) => {
+        try {
+          await call("write_terminal", { id, data: TASK_REPORT_PROMPT });
+          // Sent together, agent TUIs read the Enter as part of a paste and
+          // leave the prompt sitting unsubmitted.
+          await new Promise((resolve) => window.setTimeout(resolve, SUBMIT_DELAY_MS));
+          await call("write_terminal", { id, data: "\r" });
+        } catch (error) {
+          fail(error);
+        }
+      },
+
       focusIndex: (index) => dispatch({ type: "terminal/focus-index", index }),
       movePane: (dir) => dispatch({ type: "terminal/move", dir }),
       moveFocus: (dir) => dispatch({ type: "terminal/move-focus", dir }),
@@ -523,7 +551,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       toggleFullscreen: async () => {
         const appWindow = getCurrentWindow();
-        await appWindow.setFullscreen(!(await appWindow.isFullscreen()));
+        if (!(await appWindow.isFullscreen())) {
+          maximizedBeforeFullscreen.current = await appWindow.isMaximized();
+          await appWindow.setFullscreen(true);
+          return;
+        }
+        await appWindow.setFullscreen(false);
+        // A title bar double-click while fullscreen maximizes the window
+        // underneath, invisibly. Come back to the frame the user left, so a
+        // window that was resizable before fullscreen still is afterwards.
+        if (!maximizedBeforeFullscreen.current && (await appWindow.isMaximized())) {
+          await appWindow.unmaximize();
+        }
       },
       minimize: () => getCurrentWindow().minimize(),
       toggleMaximize: () => getCurrentWindow().toggleMaximize(),

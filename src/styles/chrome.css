@@ -242,6 +242,24 @@
   font-size: 11px;
 }
 
+/* Stands in for the maximize button while fullscreen, so the state is named
+   on screen and leaving it is one click. */
+.winbtn--fullscreen {
+  width: auto;
+  gap: 6px;
+  padding: 0 9px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent);
+  background: rgba(141, 220, 255, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(141, 220, 255, 0.28);
+}
+
+.winbtn--fullscreen:hover {
+  background: rgba(141, 220, 255, 0.18);
+  color: var(--accent-bright);
+}
+
 .winbtn--close {
   font-size: 14px;
 }

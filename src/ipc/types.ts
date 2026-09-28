@@ -127,6 +127,7 @@ export const EVENTS = {
   git: "terminal://git",
   agent: "terminal://agent",
   stats: "terminal://stats",
+  task: "terminal://task",
   notesChanged: "notes://changed",
 } as const;
 
@@ -151,6 +152,15 @@ export interface StatsEvent {
   id: TerminalId;
   cpuPercent: number;
   memBytes: number;
+}
+
+// What the pane's agent says it is working on (design section 5.5). Every shell
+// gets TERMINAL_GRID_TASK_FILE; whatever is written there arrives here as one
+// line. `task` is null when the file was emptied.
+export interface TaskEvent {
+  id: TerminalId;
+  task: string | null;
+  updatedAtMs: number;
 }
 
 export interface NotesChangedEvent {

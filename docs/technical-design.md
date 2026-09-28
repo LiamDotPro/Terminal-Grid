@@ -291,6 +291,12 @@ On `OSC 133;D` the frontend checks the last command (from `OSC 7777`) against th
 
 Only when the session shell is `Cmd` and the process watcher found no agent process: if the user's typed line matched a pattern, then output stayed above 0 bytes/s for at least 3 s and is now silent for `config.idle_timeout_ms` (default 4000) → finished. This is a heuristic and is labelled as such in settings.
 
+### 5.5 Task reports
+
+What the agent is working on comes from the agent itself, not from detection. `PtyManager::spawn` gives every shell `TERMINAL_GRID_TASK_FILE=<config dir>/tasks/<id>.txt` and creates the file empty. Agents write one line there. The AgentWatcher tick stats each live session's file, and when the mtime or length changes it reads the first 4 KiB and emits `terminal://task { id, task, updatedAtMs }`. The line is decoded as UTF-8 or as UTF-16 with a BOM, since Windows PowerShell 5.1's `>` writes UTF-16LE. Whitespace collapses to single spaces, the line is capped at 280 characters, and an empty file sends `task: null`. Closing a pane deletes its file, and the tasks folder is emptied at launch.
+
+A file was chosen over an OSC sequence because agents capture their tools' output, so an escape sequence printed by a tool call never reaches the terminal. A file also needs no port or token. The frontend drops the task when a new agent run starts or the shell exits. The pane's `task` button opens an overlay at the top right of the terminal. From there, "Ask agent" types a one line request into the pty (the Enter is sent 150 ms after the text, so agent TUIs don't treat it as part of a paste), and "Copy instructions" copies a CLAUDE.md / AGENTS.md section.
+
 The animation itself and the visual "done" marker are frontend concerns; the contract is only the event.
 
 ---
@@ -532,6 +538,7 @@ Events (Rust → frontend), all emitted to the `main` window:
 | `terminal://git` | `{ id, info: GitInfo }` |
 | `terminal://agent` | `{ id, event: "started" \| "finished", name, durationMs? , source: "process" \| "shell" \| "bell" \| "idle" }` |
 | `terminal://stats` | `{ id, cpuPercent, memBytes }` sampled on the AgentWatcher tick for the session process tree; the pane header renders it next to the agent badge |
+| `terminal://task` | `{ id, task: string \| null, updatedAtMs }` when a session's `TERMINAL_GRID_TASK_FILE` changes (section 5.5) |
 | `notes://changed` | `{ relPath, kind }` |
 
 Frontend → Rust commands are listed in sections 4.4, 7, 8, 9. All commands return `Result<T, AppError>` where `AppError` serializes to `{ code: string, message: string, ...extra }`. Codes: `NotFound`, `SpawnFailed`, `Io`, `OutsideRoot`, `Conflict`, `InvalidName`, `GitTimeout`, `GitNotInstalled`.

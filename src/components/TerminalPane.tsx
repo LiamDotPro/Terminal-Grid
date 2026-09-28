@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { cx } from "../lib/cx";
 import { isClaudeAgent, type PaneView } from "../state/model";
+import { TaskOverlay } from "./TaskOverlay";
 import { XtermSurface } from "./XtermSurface";
 
 export type OpenFromHow = "same-folder" | "pick-folder";
@@ -14,6 +15,8 @@ interface TerminalPaneProps {
   onOpenFrom: (how: OpenFromHow) => void;
   onClose: () => void;
   onRestart: () => void;
+  /** Asks the pane's agent to report what it is working on. */
+  onAskForTask: () => void;
 }
 
 export function TerminalPane({
@@ -23,7 +26,9 @@ export function TerminalPane({
   onOpenFrom,
   onClose,
   onRestart,
+  onAskForTask,
 }: TerminalPaneProps) {
+  const [taskOpen, setTaskOpen] = useState(false);
   const showDetail = !compact && view.agent !== null && view.status !== "exited";
   const showSecondRow = view.worktrees.length > 0 || (showDetail && view.lastCommand !== null);
 
@@ -89,6 +94,26 @@ export function TerminalPane({
             </span>
           )}
 
+          {view.canShowTask && (
+            <button
+              type="button"
+              className={cx(
+                "pane__task-toggle",
+                taskOpen && "pane__task-toggle--open",
+                view.task !== null && "pane__task-toggle--reported",
+              )}
+              aria-label={`Current task in pane ${view.n}`}
+              aria-pressed={taskOpen}
+              title={view.task ?? "What is the agent working on?"}
+              onClick={(event) => {
+                event.stopPropagation();
+                setTaskOpen((value) => !value);
+              }}
+            >
+              task
+            </button>
+          )}
+
           <OpenFromButton n={view.n} onOpenFrom={onOpenFrom} />
 
           <button
@@ -141,6 +166,16 @@ export function TerminalPane({
 
       <div className="pane__body">
         <XtermSurface id={view.id} />
+
+        {taskOpen && view.canShowTask && (
+          <TaskOverlay
+            agent={view.agent}
+            task={view.task}
+            taskAge={view.taskAge}
+            onAsk={onAskForTask}
+            onClose={() => setTaskOpen(false)}
+          />
+        )}
 
         {view.status === "exited" && (
           <div className="pane__exited">

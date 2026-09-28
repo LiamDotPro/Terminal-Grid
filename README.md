@@ -6,7 +6,20 @@ Desktop terminal grid built on Tauri 2 (Rust) with a Notes tab for markdown.
 - IPC contract shared by both sides: `src/ipc/types.ts`
 - Shell integration script bundled with the app: `src-tauri/resources/shell-integration.ps1`
 
-## Prerequisites (Windows)
+## Install (Windows)
+
+Download the latest installer from the
+[Releases page](https://github.com/LiamDotPro/Terminal-Grid/releases):
+
+- `Terminal Grid_<version>_x64-setup.exe` installs per user with no admin prompt
+  (recommended).
+- `Terminal Grid_<version>_x64_en-US.msi` is the MSI for scripted or per machine
+  installs.
+
+Both bootstrap the WebView2 runtime if it is missing. Windows 10 1809 or later
+is required for ConPTY.
+
+## Build prerequisites (Windows)
 
 - Rust stable with the MSVC toolchain (`rustup default stable-msvc`)
 - Visual Studio Build Tools with the "Desktop development with C++" workload
@@ -21,13 +34,35 @@ npm run tauri dev
 ```
 
 The window is frameless and starts fullscreen; the 44px bar at the top is the
-app's own chrome, and it is the drag region. `F11` toggles fullscreen.
+app's own chrome, and it is the drag region. `F11` toggles fullscreen. While
+fullscreen the maximize button is replaced by a highlighted "Full screen" pill
+that exits it; a normal window has a thin outline and resizes from its edges.
 
 ## Build installer
 
 ```
 npm run tauri build
 ```
+
+Output lands in `src-tauri/target/release/bundle/nsis/` (setup.exe) and
+`src-tauri/target/release/bundle/msi/`.
+
+## Release
+
+Bump the version in `package.json`, `src-tauri/Cargo.toml` and
+`src-tauri/tauri.conf.json`, commit, then tag and push:
+
+```
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+`.github/workflows/release.yml` runs the tests, builds both installers and
+attaches them to a draft GitHub Release named after the tag. Publish the draft
+from the Releases page once the notes look right.
+
+Microsoft Store submission (MSIX via `scripts/pack-msix.ps1`) and the Mac App
+Store assessment are in `docs/store-publishing.md`.
 
 ## Test
 
@@ -106,6 +141,27 @@ To get the bell signal from Claude Code in addition to process detection:
 ```
 claude config set --global preferredNotifChannel terminal_bell
 ```
+
+## Current task
+
+While an agent runs, the pane header shows a `task` button. It opens a card at
+the top right of the terminal with the task the agent last reported, and how
+long ago it did. The dot on the button lights up once a task has come in.
+
+Every shell starts with `TERMINAL_GRID_TASK_FILE` pointing at a file for that
+pane. Anything written there shows up in the card within a second, and emptying
+the file clears it:
+
+```
+echo "Adding retries to the upload client" > "$TERMINAL_GRID_TASK_FILE"
+```
+
+Agents don't know about this on their own. You can tell them in two ways:
+
+- **Ask agent** in the card types a one line request into the pane, so the
+  agent writes its task now.
+- **Copy instructions** copies a short section for `CLAUDE.md` or `AGENTS.md`,
+  so the agent keeps the file up to date without being asked.
 
 ## Notes
 

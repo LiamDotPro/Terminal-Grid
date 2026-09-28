@@ -15,6 +15,7 @@ use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, Pt
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use crate::agent::task;
 use crate::error::{AppError, Result};
 use crate::pty::reader::OutputPump;
 use crate::pty::shell::ShellKind;
@@ -121,6 +122,23 @@ impl PtyManager {
             .collect()
     }
 
+    /// Every live session's task file, for the agent watcher's task poll.
+    pub fn task_files(&self) -> Vec<(TerminalId, PathBuf)> {
+        let dir = self.tasks_dir();
+        self.sessions
+            .lock()
+            .expect("pty sessions")
+            .iter()
+            .filter(|(_, session)| !session.exited)
+            .map(|(id, _)| (id.clone(), task::task_file(&dir, id)))
+            .collect()
+    }
+
+    /// Where the per session task files live, next to the integration scripts.
+    pub fn tasks_dir(&self) -> PathBuf {
+        self.script_dir.lock().expect("pty script dir").join("tasks")
+    }
+
     /// Live shell pids, for the agent watcher's process tree walk.
     pub fn shell_pids(&self) -> Vec<(TerminalId, u32)> {
         self.sessions
@@ -191,6 +209,14 @@ impl PtyManager {
         command.env("COLORTERM", "truecolor");
         command.env("TERMINAL_GRID", "1");
         command.env("TERMINAL_GRID_ID", &id);
+
+        // A task file the pane's agent can report into (agent::task). A pane
+        // without one still works, it just never shows a task.
+        let task_path = task::task_file(&self.tasks_dir(), &id);
+        match task::reset_task_file(&task_path) {
+            Ok(()) => command.env(task::ENV_TASK_FILE, path_string(&task_path)),
+            Err(error) => eprintln!("terminal-grid: no task file for {id}: {error}"),
+        }
 
         let child = pair
             .slave
@@ -363,6 +389,7 @@ impl PtyManager {
             return Ok(());
         };
         drop(guard);
+        let _ = std::fs::remove_file(task::task_file(&self.tasks_dir(), id));
 
         // Killing the ConPTY closes its children too, so agents get a chance to
         // clean up. The waiter thread reaps the process; nothing here blocks the

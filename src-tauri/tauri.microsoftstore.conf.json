@@ -1,0 +1,12 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "$comment": "Overlay for the EXE/MSI route into the Microsoft Store. The Store requires an offline installer, so the WebView2 runtime is embedded instead of downloaded, and the publisher must differ from the product name. Build with: npm run tauri build -- --config src-tauri/tauri.microsoftstore.conf.json. The resulting installer also has to be Authenticode signed with a CA-issued certificate before submission; the MSIX route (scripts/pack-msix.ps1) avoids that.",
+  "bundle": {
+    "publisher": "Liam Read",
+    "windows": {
+      "webviewInstallMode": {
+        "type": "offlineInstaller"
+      }
+    }
+  }
+}

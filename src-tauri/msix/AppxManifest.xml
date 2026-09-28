@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MSIX manifest template for the Microsoft Store build. scripts/pack-msix.ps1
+  fills the __PLACEHOLDERS__ from src-tauri/msix/identity.json and
+  src-tauri/tauri.conf.json, stages the release exe, resources and icons, and
+  runs makeappx. The Store re-signs the package, so no certificate is needed
+  for submission.
+
+  Identity Name and Publisher must match the values Partner Center shows under
+  Product management > Product identity once the app name is reserved.
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6"
+  IgnorableNamespaces="uap rescap desktop6">
+
+  <Identity
+    Name="__IDENTITY_NAME__"
+    Publisher="__PUBLISHER__"
+    Version="__VERSION__"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>__DISPLAY_NAME__</DisplayName>
+    <PublisherDisplayName>__PUBLISHER_DISPLAY_NAME__</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <Description>__DESCRIPTION__</Description>
+    <!-- Shells and git run as children of this process. Keep their writes to
+         AppData and the registry real rather than redirected into the package
+         container, otherwise tools the user runs see a different filesystem
+         than a plain terminal would. -->
+    <desktop6:FileSystemWriteVirtualization>disabled</desktop6:FileSystemWriteVirtualization>
+    <desktop6:RegistryWriteVirtualization>disabled</desktop6:RegistryWriteVirtualization>
+  </Properties>
+
+  <Dependencies>
+    <!-- 10.0.17763 is Windows 10 1809: the first build with ConPTY, and the
+         first that supports the desktop6 virtualization switches above. -->
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.22621.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <Application Id="TerminalGrid" Executable="terminal-grid.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="__DISPLAY_NAME__"
+        Description="__DESCRIPTION__"
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png">
+        <!-- Square310x310Logo would also require Wide310x150Logo, which the
+             icon set does not have; the large tile falls back to 150x150. -->
+        <uap:DefaultTile Square71x71Logo="Assets\Square71x71Logo.png" />
+      </uap:VisualElements>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <!-- runFullTrust: any Win32 app needs it; shells and git run with the
+         user's full rights, exactly like Windows Terminal.
+         unvirtualizedResources: required by the two virtualization switches
+         in Properties. It is a restricted capability, so the Store submission
+         asks for a justification; Windows Terminal declares the same pair. -->
+    <rescap:Capability Name="runFullTrust" />
+    <rescap:Capability Name="unvirtualizedResources" />
+  </Capabilities>
+</Package>
