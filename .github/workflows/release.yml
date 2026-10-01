@@ -1,12 +1,18 @@
-# Builds the Windows installers and attaches them to a GitHub Release.
+# Builds Terminal Grid for Windows, macOS and Linux and publishes a GitHub
+# Release with the installers attached.
 #
-# Trigger by pushing a tag that matches the version in package.json,
+# Trigger by pushing an annotated tag that matches the version in package.json,
 # src-tauri/Cargo.toml and src-tauri/tauri.conf.json:
 #
-#   git tag v0.1.0 && git push origin v0.1.0
+#   git tag -a v0.3.0 -m "What changed, a few short lines"
+#   git push origin v0.3.0
 #
-# The release is created as a draft so the notes can be edited before it goes
-# public. "Run workflow" from the Actions tab builds without publishing.
+# The tag message becomes the top of the release notes. The release is created
+# as a draft, every platform uploads into it, and it is published only once all
+# of them have succeeded, so a public release never has missing downloads.
+#
+# "Run workflow" from the Actions tab builds every platform without releasing;
+# the bundles are kept as workflow artifacts.
 
 name: Release
 
@@ -19,11 +25,90 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  windows:
-    runs-on: windows-latest
+  draft:
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.release.outputs.id }}
     steps:
       - uses: actions/checkout@v4
+
+      # actions/checkout turns the tag into a lightweight one; fetch it again to
+      # get the annotation.
+      - name: Read the tag message
+        run: |
+          git fetch --force origin "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+          git tag -l --format='%(contents:body)' "$GITHUB_REF_NAME" > notes.md
+          if [ ! -s notes.md ]; then
+            git tag -l --format='%(contents)' "$GITHUB_REF_NAME" > notes.md
+          fi
+          cat >> notes.md <<'EOF'
+
+          ## Downloads
+
+          | Platform | File |
+          |---|---|
+          | Windows 10 1809+ | `*_x64-setup.exe` (per user, no admin, recommended) or `*_x64_en-US.msi` |
+          | macOS 11+ (Apple Silicon and Intel) | `*_universal.dmg` |
+          | Linux x64 | `*_amd64.AppImage`, `*_amd64.deb` or `*.x86_64.rpm` |
+
+          The macOS build is not notarized yet. If macOS says the app is damaged,
+          run `xattr -cr "/Applications/Terminal Grid.app"` once after installing.
+          EOF
+          cat notes.md
+
+      - name: Create or reuse the draft release
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          id=$(gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
+            --jq ".[] | select(.tag_name == \"${GITHUB_REF_NAME}\") | .id" | head -n1)
+          if [ -z "$id" ]; then
+            id=$(gh api -X POST "repos/${GITHUB_REPOSITORY}/releases" \
+              -f tag_name="$GITHUB_REF_NAME" \
+              -f name="Terminal Grid ${GITHUB_REF_NAME}" \
+              -F body=@notes.md \
+              -F draft=true \
+              --jq .id)
+          fi
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: draft
+    # Also runs on a manual dispatch, where the draft job is skipped.
+    if: ${{ !failure() && !cancelled() }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows
+            os: windows-latest
+            rust-targets: ""
+            args: ""
+          - name: macos
+            os: macos-latest
+            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
+            args: --target universal-apple-darwin
+          - name: linux
+            # The oldest supported runner, so the AppImage runs on older glibc.
+            os: ubuntu-22.04
+            rust-targets: ""
+            args: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux build dependencies
+        if: matrix.name == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       - uses: actions/setup-node@v4
         with:
@@ -32,11 +117,12 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-pc-windows-msvc
+          targets: ${{ matrix.rust-targets }}
 
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          key: ${{ matrix.name }}
 
       - run: npm ci
 
@@ -47,33 +133,37 @@ jobs:
         run: cargo test
         working-directory: src-tauri
 
-      - name: Build installers and publish draft release
+      - name: Build and upload to the draft release
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tauriScript: npm run tauri
-          # On a manual run there is no tag, so the action only builds and the
-          # installers are kept as workflow artifacts.
-          tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
-          releaseName: Terminal Grid ${{ github.ref_name }}
-          releaseBody: |
-            Windows installers are attached below.
-
-            - `Terminal Grid_<version>_x64-setup.exe` — NSIS installer, per user, no admin required (recommended)
-            - `Terminal Grid_<version>_x64_en-US.msi` — MSI for scripted or per machine installs
-
-            The installer bootstraps the WebView2 runtime if it is missing.
-          releaseDraft: true
-          prerelease: false
+          args: ${{ matrix.args }}
+          # Empty on a manual run, so the action only builds.
+          releaseId: ${{ needs.draft.outputs.release_id }}
           uploadWorkflowArtifacts: true
 
       - name: Package unsigned MSIX for the Microsoft Store
+        if: matrix.name == 'windows'
         shell: pwsh
         run: .\scripts\pack-msix.ps1
 
       - uses: actions/upload-artifact@v4
+        if: matrix.name == 'windows'
         with:
           name: msix-unsigned
           path: src-tauri/target/msix/*.msix
           if-no-files-found: error
+
+  publish:
+    needs: [draft, build]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/${{ needs.draft.outputs.release_id }}" \
+            -F draft=false -f make_latest=true --jq .html_url
