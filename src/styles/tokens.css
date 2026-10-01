@@ -12,6 +12,20 @@
   --font-ui: "Geist Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", "Cascadia Mono", "Consolas", monospace;
 
+  /* Theme channels ---------------------------------------------------- */
+  /* Components mix these with an alpha (rgb(var(--ink-rgb) / 0.1)), so the
+     light theme below only has to swap the channels, not every colour. */
+  color-scheme: dark;
+  --ink-rgb: 255 255 255; /* overlays, hairlines, hover fills */
+  --text-rgb: 238 241 246;
+  --glass-rgb: 8 10 18; /* frosted panels */
+  --accent-rgb: 141 220 255;
+  --ok-rgb: 127 224 168;
+  --warn-rgb: 240 182 74;
+  --danger-rgb: 232 80 80;
+  --shadow-k: 1; /* scales every drop shadow's opacity */
+  --bg-option: #14161f;
+
   /* Surface ---------------------------------------------------------- */
   --bg-root: #07080d;
   --bg-app:
@@ -23,18 +37,18 @@
   /* Text ------------------------------------------------------------- */
   --text: #eef1f6;
   --text-strong: #fff;
-  --text-90: rgba(238, 241, 246, 0.9);
-  --text-85: rgba(238, 241, 246, 0.85);
-  --text-78: rgba(238, 241, 246, 0.78);
-  --text-75: rgba(238, 241, 246, 0.75);
-  --text-70: rgba(238, 241, 246, 0.7);
-  --text-68: rgba(238, 241, 246, 0.68);
-  --text-65: rgba(238, 241, 246, 0.65);
-  --text-55: rgba(238, 241, 246, 0.55);
-  --text-50: rgba(238, 241, 246, 0.5);
-  --text-45: rgba(238, 241, 246, 0.45);
-  --text-40: rgba(238, 241, 246, 0.4);
-  --text-28: rgba(238, 241, 246, 0.28);
+  --text-90: rgb(var(--text-rgb) / 0.9);
+  --text-85: rgb(var(--text-rgb) / 0.85);
+  --text-78: rgb(var(--text-rgb) / 0.78);
+  --text-75: rgb(var(--text-rgb) / 0.75);
+  --text-70: rgb(var(--text-rgb) / 0.7);
+  --text-68: rgb(var(--text-rgb) / 0.68);
+  --text-65: rgb(var(--text-rgb) / 0.65);
+  --text-55: rgb(var(--text-rgb) / 0.55);
+  --text-50: rgb(var(--text-rgb) / 0.5);
+  --text-45: rgb(var(--text-rgb) / 0.45);
+  --text-40: rgb(var(--text-rgb) / 0.4);
+  --text-28: rgb(var(--text-rgb) / 0.28);
 
   /* Accents ---------------------------------------------------------- */
   --accent: #8ddcff;
@@ -44,49 +58,49 @@
   --ok-soft: #a9f0c8;
   --warn: #f0b64a;
   --warn-soft: #ffe1a8;
-  --danger: rgba(232, 80, 80, 0.8);
-  --danger-soft: rgba(232, 80, 80, 0.5);
+  --danger: rgb(var(--danger-rgb) / 0.8);
+  --danger-soft: rgb(var(--danger-rgb) / 0.5);
 
   /* Glass ------------------------------------------------------------ */
-  --glass-panel: rgba(8, 10, 18, 0.55);
-  --glass-pane: rgba(8, 10, 18, 0.58);
-  --glass-sheet: rgba(14, 16, 28, 0.72);
-  --glass-card: rgba(12, 14, 24, 0.5);
+  --glass-panel: rgb(var(--glass-rgb) / 0.55);
+  --glass-pane: rgb(var(--glass-rgb) / 0.58);
+  --glass-sheet: rgb(var(--glass-rgb) / 0.72);
+  --glass-card: rgb(var(--glass-rgb) / 0.5);
   --glass-blur: blur(24px) saturate(1.25);
   --glass-blur-strong: blur(36px) saturate(1.3);
   --glass-blur-pop: blur(30px) saturate(1.3);
 
-  --hair: rgba(255, 255, 255, 0.08);
-  --hair-soft: rgba(255, 255, 255, 0.06);
-  --edge: rgba(255, 255, 255, 0.13);
-  --edge-strong: rgba(255, 255, 255, 0.16);
+  --hair: rgb(var(--ink-rgb) / 0.08);
+  --hair-soft: rgb(var(--ink-rgb) / 0.06);
+  --edge: rgb(var(--ink-rgb) / 0.13);
+  --edge-strong: rgb(var(--ink-rgb) / 0.16);
 
-  --fill-1: rgba(255, 255, 255, 0.06);
-  --fill-2: rgba(255, 255, 255, 0.07);
-  --fill-3: rgba(255, 255, 255, 0.1);
-  --fill-4: rgba(255, 255, 255, 0.14);
-  --fill-5: rgba(255, 255, 255, 0.16);
-  --fill-hover: rgba(255, 255, 255, 0.1);
+  --fill-1: rgb(var(--ink-rgb) / 0.06);
+  --fill-2: rgb(var(--ink-rgb) / 0.07);
+  --fill-3: rgb(var(--ink-rgb) / 0.1);
+  --fill-4: rgb(var(--ink-rgb) / 0.14);
+  --fill-5: rgb(var(--ink-rgb) / 0.16);
+  --fill-hover: rgb(var(--ink-rgb) / 0.1);
 
-  --header-wash: linear-gradient(180deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.03));
+  --header-wash: linear-gradient(180deg, rgb(var(--ink-rgb) / 0.075), rgb(var(--ink-rgb) / 0.03));
 
   /* Elevation -------------------------------------------------------- */
-  --shadow-panel: 0 20px 50px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  --shadow-pane: 0 20px 50px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  --shadow-pop: 0 24px 60px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.14);
-  --shadow-card: 0 30px 80px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.14);
-  --shadow-sheet: 0 40px 100px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.14);
-  --shadow-seg: 0 1px 6px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  --shadow-panel: 0 20px 50px rgb(0 0 0 / calc(0.4 * var(--shadow-k))), inset 0 1px 0 rgb(var(--ink-rgb) / 0.1);
+  --shadow-pane: 0 20px 50px rgb(0 0 0 / calc(0.4 * var(--shadow-k))), inset 0 1px 0 rgb(var(--ink-rgb) / 0.1);
+  --shadow-pop: 0 24px 60px rgb(0 0 0 / calc(0.55 * var(--shadow-k))), inset 0 1px 0 rgb(var(--ink-rgb) / 0.14);
+  --shadow-card: 0 30px 80px rgb(0 0 0 / calc(0.5 * var(--shadow-k))), inset 0 1px 0 rgb(var(--ink-rgb) / 0.14);
+  --shadow-sheet: 0 40px 100px rgb(0 0 0 / calc(0.6 * var(--shadow-k))), inset 0 1px 0 rgb(var(--ink-rgb) / 0.14);
+  --shadow-seg: 0 1px 6px rgb(0 0 0 / calc(0.25 * var(--shadow-k))), inset 0 1px 0 rgb(var(--ink-rgb) / 0.18);
 
-  --ring-focus: 0 0 0 4px rgba(141, 220, 255, 0.28), 0 20px 50px rgba(0, 0, 0, 0.45),
-    inset 0 1px 0 rgba(255, 255, 255, 0.12);
-  --ring-finished: 0 0 0 4px rgba(127, 224, 168, 0.14), 0 0 32px rgba(127, 224, 168, 0.3),
-    0 20px 50px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12);
-  --border-finished: rgba(127, 224, 168, 0.75);
+  --ring-focus: 0 0 0 4px rgb(var(--accent-rgb) / 0.28), 0 20px 50px rgb(0 0 0 / calc(0.45 * var(--shadow-k))),
+    inset 0 1px 0 rgb(var(--ink-rgb) / 0.12);
+  --ring-finished: 0 0 0 4px rgb(var(--ok-rgb) / 0.14), 0 0 32px rgb(var(--ok-rgb) / 0.3),
+    0 20px 50px rgb(0 0 0 / calc(0.45 * var(--shadow-k))), inset 0 1px 0 rgb(var(--ink-rgb) / 0.12);
+  --border-finished: rgb(var(--ok-rgb) / 0.75);
 
   /* Terminal palette (mirrors TerminalPane.dc.html `C`) --------------- */
   --term-plain: #e6e9f0;
-  --term-dim: rgba(230, 233, 240, 0.5);
+  --term-dim: rgb(var(--text-rgb) / 0.5);
   --term-ok: #7fe0a8;
   --term-warn: #f0b64a;
   --term-accent: #8ddcff;
@@ -106,4 +120,101 @@
   --grid-pad: 4px 12px 12px;
   --radius-pane: 14px;
   --radius-sheet: 20px;
+}
+
+/* Light ----------------------------------------------------------------- */
+/* The same glass design on a pale wash: overlays turn to dark ink, accents
+   are deepened so they keep their contrast on white. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --ink-rgb: 24 30 52;
+  --text-rgb: 28 33 48;
+  --glass-rgb: 255 255 255;
+  --accent-rgb: 12 120 178;
+  --ok-rgb: 22 150 92;
+  --warn-rgb: 190 120 0;
+  --danger-rgb: 210 50 50;
+  --shadow-k: 0.28;
+  --bg-option: #ffffff;
+
+  --bg-root: #eef1f7;
+  --bg-app:
+    radial-gradient(1200px 800px at 12% 8%, rgba(150, 128, 235, 0.32), transparent 62%),
+    radial-gradient(1000px 760px at 88% 92%, rgba(80, 180, 215, 0.3), transparent 62%),
+    radial-gradient(900px 600px at 60% 35%, rgba(230, 150, 190, 0.18), transparent 60%),
+    linear-gradient(180deg, #f6f7fb, #e9edf5);
+
+  --text: #1c2130;
+  --text-strong: #05070d;
+
+  --accent: #0c78b2;
+  --accent-bright: #075580;
+  --accent-violet: #6a4fd6;
+  --ok: #16965c;
+  --ok-soft: #0f7a49;
+  --warn: #be7800;
+  --warn-soft: #8f5a00;
+
+  --glass-panel: rgb(var(--glass-rgb) / 0.6);
+  --glass-pane: rgb(var(--glass-rgb) / 0.66);
+  --glass-sheet: rgb(var(--glass-rgb) / 0.86);
+  --glass-card: rgb(var(--glass-rgb) / 0.75);
+
+  --term-plain: #1f2433;
+  --term-ok: #16965c;
+  --term-warn: #be7800;
+  --term-accent: #0c78b2;
+  --term-prompt: #6a4fd6;
+  --term-err: #c93636;
+
+  --agent-claude-bg: rgba(215, 120, 60, 0.16);
+  --agent-claude-fg: #9a4a14;
+  --agent-other-bg: rgba(60, 120, 220, 0.14);
+  --agent-other-fg: #22509e;
+}
+
+/* Black ----------------------------------------------------------------- */
+/* Total darkness: pure black, no coloured glow, near opaque panes. */
+:root[data-theme="black"] {
+  --glass-rgb: 0 0 0;
+  --shadow-k: 0;
+  --bg-option: #000000;
+  --bg-root: #000000;
+  --bg-app: #000000;
+  --glass-panel: rgb(var(--glass-rgb) / 0.92);
+  --glass-pane: rgb(var(--glass-rgb) / 0.96);
+  --glass-sheet: rgb(10 10 12 / 0.97);
+  --glass-card: rgb(12 12 14 / 0.96);
+  --header-wash: none;
+}
+
+/* Compact layout -------------------------------------------------------- */
+/* Settings → Compact layout: square panes, no borders or shadows, and the
+   least space between panes and around the window edge. Focus and finished
+   states become a 1px inset outline so they take no room. */
+:root[data-layout="compact"] {
+  --grid-gap: 2px;
+  --grid-pad: 0 2px 2px;
+  --radius-pane: 0px;
+}
+
+:root[data-layout="compact"] :is(.pane, .notes__panel, .rail) {
+  border: none;
+  box-shadow: none;
+}
+
+:root[data-layout="compact"] .pane--focused {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+:root[data-layout="compact"] .pane--finished {
+  outline: 1px solid var(--border-finished);
+  outline-offset: -1px;
+  animation: none;
+}
+
+:root[data-layout="compact"] :is(.pane__header, .pane--focused .pane__header) {
+  padding: 5px 8px;
+  gap: 4px;
 }

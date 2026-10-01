@@ -63,6 +63,9 @@ export interface NoteNode {
 
 export type HotkeyModifier = "ctrl+alt" | "ctrl+shift";
 
+/** "system" follows the OS light/dark setting; "black" is the total darkness theme. */
+export type ThemePreference = "system" | "light" | "dark" | "black";
+
 export interface Config {
   version: 1;
   shell: string | null;
@@ -75,6 +78,8 @@ export interface Config {
   fontSize: number;
   scrollback: number;
   restoreSessionOnLaunch: boolean;
+  theme: ThemePreference;
+  compactLayout: boolean;
 }
 
 export interface SavedTerminal {

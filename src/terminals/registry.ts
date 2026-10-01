@@ -14,7 +14,7 @@ import type { Config, HotkeyModifier, TerminalId } from "../ipc/types";
 import { isModifierHeld } from "../lib/hotkeys";
 import { clipboardIntent } from "./clipboard";
 import { parseOsc7, parseOsc133, parseOsc7777 } from "./osc";
-import { TERMINAL_THEME } from "./theme";
+import { terminalTheme, type ResolvedTheme } from "./theme";
 
 export interface RegistryCallbacks {
   onData(id: TerminalId, data: string): void;
@@ -62,6 +62,7 @@ export class TerminalRegistry {
   private readonly disposed = new Set<TerminalId>();
   private callbacks: RegistryCallbacks = NOOP_CALLBACKS;
   private modifier: HotkeyModifier = "ctrl+alt";
+  private theme: ResolvedTheme = "dark";
   private options: Pick<Config, "fontFamily" | "fontSize" | "scrollback"> = {
     fontFamily: null,
     fontSize: 14,
@@ -78,6 +79,13 @@ export class TerminalRegistry {
       scrollback: config.scrollback,
     };
     for (const entry of this.entries.values()) this.applyOptions(entry.term);
+  }
+
+  /** Repaints every terminal in the palette for the theme on screen. */
+  setTheme(theme: ResolvedTheme): void {
+    if (theme === this.theme) return;
+    this.theme = theme;
+    for (const entry of this.entries.values()) entry.term.options.theme = terminalTheme(theme);
   }
 
   has(id: TerminalId): boolean {
@@ -106,7 +114,7 @@ export class TerminalRegistry {
       macOptionIsMeta: false,
       minimumContrastRatio: 1,
       scrollback: this.options.scrollback,
-      theme: TERMINAL_THEME,
+      theme: terminalTheme(this.theme),
       windowsPty: { backend: "conpty" },
     });
 

@@ -37,6 +37,8 @@ export const DEFAULT_CONFIG: Config = {
   fontSize: 14,
   scrollback: 10000,
   restoreSessionOnLaunch: true,
+  theme: "system",
+  compactLayout: false,
 };
 
 export type SaveState = "clean" | "dirty" | "saving" | "saved" | "error";
