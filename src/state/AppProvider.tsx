@@ -36,6 +36,7 @@ import { TASK_REPORT_PROMPT } from "../lib/agentTask";
 import { errorMessage, isAppError } from "../lib/appError";
 import { matchesAgentPattern } from "../terminals/osc";
 import { terminalRegistry } from "../terminals/registry";
+import { closeUnownedTerminals } from "./orphans";
 import { initialState, reducer, toSession, type AppState } from "./reducer";
 
 const AUTOSAVE_DELAY_MS = 600;
@@ -128,6 +129,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Bootstrap ------------------------------------------------------------
 
+  // StrictMode runs this effect twice in dev; the ref survives its simulated
+  // remount, so the session is restored once.
   const booted = useRef(false);
   useEffect(() => {
     if (booted.current) return;
@@ -139,6 +142,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           call("config_get", {}),
           call("session_get", {}),
           call("notes_get_root", {}),
+          // No pane exists yet, so every shell the core already runs was left
+          // behind by an earlier page load (a webview reload).
+          closeUnownedTerminals(new Set()),
         ]);
         dispatch({ type: "ready", config, session });
         dispatch({ type: "notes/root", root: notesRoot.root });
