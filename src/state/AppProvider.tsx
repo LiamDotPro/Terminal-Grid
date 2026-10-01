@@ -70,6 +70,8 @@ export interface AppActions {
   focusIndex(index: number): void;
   /** Types the task report prompt into the pane's agent and submits it. */
   askAgentForTask(id: TerminalId): Promise<void>;
+  /** Runs an installed agent CLI (e.g. "claude") in the pane's shell. */
+  launchAgent(id: TerminalId, agent: string): Promise<void>;
   movePane(dir: "up" | "down" | "left" | "right"): void;
   moveFocus(dir: "up" | "down" | "left" | "right"): void;
 
@@ -148,6 +150,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ]);
         dispatch({ type: "ready", config, session });
         dispatch({ type: "notes/root", root: notesRoot.root });
+        // Only drives optional launcher buttons, so a failure stays quiet.
+        void call("installed_agents", {})
+          .then((agents) => dispatch({ type: "agents/installed", agents }))
+          .catch(() => {});
 
         const tree = await call("notes_tree", {});
         dispatch({ type: "notes/tree", tree });
@@ -514,6 +520,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
           // leave the prompt sitting unsubmitted.
           await new Promise((resolve) => window.setTimeout(resolve, SUBMIT_DELAY_MS));
           await call("write_terminal", { id, data: "\r" });
+        } catch (error) {
+          fail(error);
+        }
+      },
+
+      launchAgent: async (id, agent) => {
+        try {
+          await call("write_terminal", { id, data: `${agent}\r` });
+          terminalRegistry.focus(id);
         } catch (error) {
           fail(error);
         }

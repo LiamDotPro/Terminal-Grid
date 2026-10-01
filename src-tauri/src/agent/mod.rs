@@ -9,6 +9,7 @@
 //! is what the pane header shows next to the agent badge, and picks up the
 //! task line agents report through their task file (see `task`).
 
+pub mod installed;
 pub mod task;
 
 use std::collections::HashMap;
