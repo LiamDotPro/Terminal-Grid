@@ -23,6 +23,9 @@ terminals.
   pane shows it.
 - **Notes**: plain `.md` files with a live preview, autosaved.
 - **Keyboard first**: everything has a hotkey, hold the modifier to see them.
+- **Themes and density**: System, Light, Dark or Black (total darkness), and a
+  compact layout with square, borderless panes. See
+  [Appearance](docs/wiki/Appearance.md).
 
 ![The Notes tab with a markdown note open and its preview](docs/screenshots/notes.png)
 
@@ -45,9 +48,9 @@ Download the latest build from the
 
 ### Windows
 
-- `Terminal Grid_<version>_x64-setup.exe` installs per user with no admin prompt
+- `Terminal.Grid_<version>_x64-setup.exe` installs per user with no admin prompt
   (recommended).
-- `Terminal Grid_<version>_x64_en-US.msi` is the MSI for scripted or per machine
+- `Terminal.Grid_<version>_x64_en-US.msi` is the MSI for scripted or per machine
   installs.
 
 Both bootstrap the WebView2 runtime if it is missing. Windows 10 1809 or later
@@ -55,7 +58,7 @@ is required for ConPTY.
 
 ### macOS
 
-`Terminal Grid_<version>_universal.dmg` runs natively on Apple Silicon and
+`Terminal.Grid_<version>_universal.dmg` runs natively on Apple Silicon and
 Intel. The build is not notarized yet, so after dragging the
 app to Applications run this once if macOS reports it as damaged:
 
@@ -65,13 +68,18 @@ xattr -cr "/Applications/Terminal Grid.app"
 
 ### Linux
 
-- `Terminal Grid_<version>_amd64.AppImage` runs on most distributions:
+- `Terminal.Grid_<version>_amd64.AppImage` runs on most distributions:
   `chmod +x` it and start it.
-- `Terminal Grid_<version>_amd64.deb` for Debian and Ubuntu
-  (`sudo apt install ./Terminal*.deb`).
-- `Terminal Grid-<version>-1.x86_64.rpm` for Fedora and openSUSE.
+- `Terminal.Grid_<version>_amd64.deb` for Debian and Ubuntu
+  (`sudo apt install ./Terminal.Grid_*.deb`).
+- `Terminal.Grid-<version>-1.x86_64.rpm` for Fedora and openSUSE.
 
 The app uses WebKitGTK 4.1, which the packages pull in as a dependency.
+
+## Documentation
+
+More guides live in the [docs wiki](docs/wiki/Home.md), starting with
+[Appearance](docs/wiki/Appearance.md) for themes and the compact layout.
 
 ## Shells
 
