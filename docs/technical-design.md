@@ -295,7 +295,7 @@ Only when the session shell is `Cmd` and the process watcher found no agent proc
 
 What the agent is working on comes from the agent itself, not from detection. `PtyManager::spawn` gives every shell `TERMINAL_GRID_TASK_FILE=<config dir>/tasks/<id>.txt` and creates the file empty. Agents write one line there. The AgentWatcher tick stats each live session's file, and when the mtime or length changes it reads the first 4 KiB and emits `terminal://task { id, task, updatedAtMs }`. The line is decoded as UTF-8 or as UTF-16 with a BOM, since Windows PowerShell 5.1's `>` writes UTF-16LE. Whitespace collapses to single spaces, the line is capped at 280 characters, and an empty file sends `task: null`. Closing a pane deletes its file, and the tasks folder is emptied at launch.
 
-A file was chosen over an OSC sequence because agents capture their tools' output, so an escape sequence printed by a tool call never reaches the terminal. A file also needs no port or token. The frontend drops the task when a new agent run starts or the shell exits. The pane's `task` button opens an overlay at the top right of the terminal. From there, "Ask agent" types a one line request into the pty (the Enter is sent 150 ms after the text, so agent TUIs don't treat it as part of a paste), and "Copy instructions" copies a CLAUDE.md / AGENTS.md section.
+A file was chosen over an OSC sequence because agents capture their tools' output, so an escape sequence printed by a tool call never reaches the terminal. A file also needs no port or token. The frontend drops the task when a new agent run starts or the shell exits. A reported task shows as one ellipsized line under the pane header's first row (it takes the place of the last command line); clicking it drops down a popover with the full text. Before the first report the header has a small `task` button that opens the same popover. From there, "Ask agent" types a one line request into the pty (the Enter is sent 150 ms after the text, so agent TUIs don't treat it as part of a paste), and "Copy instructions" copies a CLAUDE.md / AGENTS.md section.
 
 The animation itself and the visual "done" marker are frontend concerns; the contract is only the event.
 
@@ -382,7 +382,7 @@ pub struct Worktree {
 }
 ```
 
-`open_in` is what satisfies requirement 5: the pane header of the focused terminal can list every worktree of its repo and mark the ones that are open in other panes (with the pane number), and its own.
+`open_in` is what satisfies requirement 5. The pane header puts a small fork glyph in front of the branch when `is_worktree` is set. Once the repo has two or more worktrees the branch opens a menu listing them, marking its own and the ones open in other panes (with the pane number). Picking one focuses the pane that already has it, otherwise types a shell specific `cd` at the prompt, or opens a new pane there when an agent is running in this pane (Shift+click always opens a new pane).
 
 ### 7.2 Execution
 

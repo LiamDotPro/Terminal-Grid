@@ -22,6 +22,8 @@ export interface RegistryCallbacks {
   onCwd(id: TerminalId, cwd: string): void;
   onCommand(id: TerminalId, command: string): void;
   onCommandEnd(id: TerminalId, exitCode: number | null): void;
+  /** The shell finished drawing its prompt and waits for input (OSC 133;B). */
+  onPrompt(id: TerminalId): void;
   onBell(id: TerminalId): void;
   onFocus(id: TerminalId): void;
 }
@@ -43,6 +45,7 @@ const NOOP_CALLBACKS: RegistryCallbacks = {
   onCwd: () => {},
   onCommand: () => {},
   onCommandEnd: () => {},
+  onPrompt: () => {},
   onBell: () => {},
   onFocus: () => {},
 };
@@ -141,6 +144,7 @@ export class TerminalRegistry {
       term.parser.registerOscHandler(133, (payload) => {
         const mark = parseOsc133(payload);
         if (mark?.kind === "command-end") this.callbacks.onCommandEnd(id, mark.exitCode);
+        if (mark?.kind === "prompt-end") this.callbacks.onPrompt(id);
         return true;
       }),
       term.parser.registerOscHandler(7777, (payload) => {

@@ -76,6 +76,8 @@
   background: var(--header-wash);
   border-bottom: 1px solid var(--hair);
   flex: none;
+  /* Anchors the task popover just under the header. */
+  position: relative;
 }
 
 /* The 2px focus border eats a pixel; keep the header the same height. */
@@ -113,10 +115,56 @@
 }
 
 .pane__branch {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--text-68);
   min-width: 0;
+}
+
+/* Linked worktree: a small accent fork in front of the branch, nothing more. */
+.pane__worktree-glyph {
+  flex: none;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  opacity: 0.9;
+}
+
+.pane__branch-wrap {
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+
+/* With more than one worktree the branch opens the worktree menu. It reads as
+   plain text until hovered, so the header looks the same as before. */
+.pane__branch--menu {
+  height: 20px;
+  padding: 0 4px;
+  margin: 0 -4px;
+  border-radius: 5px;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.pane__branch--menu:hover,
+.pane__branch--open {
+  background: var(--fill-hover);
+  color: var(--text-strong);
+}
+
+.pane__branch-caret {
+  flex: none;
+  font-size: 9px;
+  color: var(--text-40);
+}
+
+.pane__branch--menu:hover .pane__branch-caret,
+.pane__branch--open .pane__branch-caret {
+  color: var(--text-70);
 }
 
 .pane__git {
@@ -193,47 +241,6 @@
   color: var(--text-55);
 }
 
-.pane__worktree {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  height: 20px;
-  padding: 0 8px;
-  border-radius: 6px;
-  background: var(--fill-1);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: var(--text-78);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  max-width: 180px;
-}
-
-.pane__worktree--current {
-  background: rgba(141, 220, 255, 0.16);
-  border-color: rgba(141, 220, 255, 0.55);
-  color: var(--accent-bright);
-}
-
-.pane__worktree--prunable {
-  opacity: 0.55;
-  text-decoration: line-through;
-}
-
-.pane__worktree-pane {
-  min-width: 14px;
-  height: 14px;
-  padding: 0 3px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-  background: var(--fill-4);
-  font-size: 9.5px;
-  color: var(--text-strong);
-  flex: none;
-}
-
 .pane__last-command {
   min-width: 0;
   font-family: var(--font-mono);
@@ -300,6 +307,81 @@
   color: var(--text-45);
 }
 
+/* Worktree menu under the branch ---------------------------------------- */
+
+.pane__menu--start {
+  left: -4px;
+  right: auto;
+  min-width: 220px;
+  max-width: min(320px, 80vw);
+}
+
+.pane__menu-label {
+  padding: 4px 10px 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-45);
+}
+
+.pane__worktree-item {
+  justify-content: flex-start;
+  gap: 8px;
+  height: 28px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+.pane__worktree-item:disabled {
+  cursor: default;
+}
+
+.pane__worktree-item:disabled:hover {
+  background: none;
+  color: var(--text-85);
+}
+
+.pane__worktree-mark {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 1px solid var(--text-28);
+}
+
+.pane__worktree-item--current .pane__worktree-mark {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.pane__worktree-item--current .pane__worktree-name {
+  color: var(--accent-bright);
+}
+
+.pane__worktree-item--prunable .pane__worktree-name {
+  opacity: 0.55;
+  text-decoration: line-through;
+}
+
+.pane__worktree-name {
+  min-width: 0;
+}
+
+.pane__worktree-tag {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--fill-1);
+  font-size: 9.5px;
+  line-height: 15px;
+  color: var(--text-50);
+}
+
+.pane__worktree-item .pane__menu-hint {
+  flex: none;
+}
+
 /* Agent task (design section 5.5) -------------------------------------- */
 
 .pane__task-toggle {
@@ -322,22 +404,55 @@
   color: var(--text-strong);
 }
 
-/* A reported task lights the dot, so a glance says whether there is one. */
-.pane__task-toggle--reported::before {
-  content: "";
+/* Once reported, the task is a single quiet line under the header's first
+   row; the full text and the actions drop down from it. */
+.pane__task-line {
+  height: 18px;
+  margin: -1px -4px -2px;
+  padding: 0 4px;
+  width: calc(100% + 8px);
+  gap: 7px;
+  border-radius: 5px;
+  font-size: 11.5px;
+  color: var(--text-70);
+  text-align: left;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.pane__task-line:hover,
+.pane__task-line--open {
+  background: var(--fill-1);
+  color: var(--text-90);
+}
+
+.pane__task-dot {
+  flex: none;
   width: 5px;
   height: 5px;
   border-radius: 50%;
   background: var(--accent);
+  box-shadow: 0 0 6px rgba(141, 220, 255, 0.6);
+}
+
+.pane__task-line-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.pane__task-line-age {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-40);
 }
 
 .pane__task {
   position: absolute;
-  top: 8px;
+  top: calc(100% + 6px);
   right: 10px;
-  z-index: 20;
-  width: min(340px, calc(100% - 20px));
-  padding: 10px 12px 12px;
+  z-index: 30;
+  width: min(300px, calc(100% - 20px));
+  padding: 9px 11px 10px;
   border-radius: 12px;
   background: var(--glass-sheet);
   backdrop-filter: var(--glass-blur-pop);
@@ -345,7 +460,7 @@
   box-shadow: var(--shadow-pop);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 7px;
   animation: pane-task-in 140ms ease-out;
 }
 
@@ -378,7 +493,7 @@
 
 .pane__task-text {
   margin: 0;
-  font-size: 13px;
+  font-size: 12.5px;
   line-height: 1.45;
   color: var(--text-90);
   overflow-wrap: anywhere;

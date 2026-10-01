@@ -16,11 +16,12 @@ terminals.
 
 - **Grid of terminals** in up to 3x3 per page, side by side or stacked, with as
   many pages as you need.
-- **Git aware panes**: repository name, branch and worktrees in every header.
+- **Git aware panes**: repository name and branch in every header, a marker
+  when you are in a worktree, and a menu to switch between worktrees.
 - **Agent detection**: a pane lights up while Claude Code, Codex, Gemini, Aider
   and friends run, and turns green when they finish.
-- **Current task** card: agents report what they are doing into a file and the
-  pane shows it.
+- **Current task**: agents report what they are doing into a file and the
+  pane shows it on one line under the header.
 - **Notes**: plain `.md` files with a live preview, autosaved.
 - **Keyboard first**: everything has a hotkey, hold the modifier to see them.
 
@@ -227,13 +228,14 @@ claude config set --global preferredNotifChannel terminal_bell
 
 ## Current task
 
-While an agent runs, the pane header shows a `task` button. It opens a card at
-the top right of the terminal with the task the agent last reported, and how
-long ago it did. The dot on the button lights up once a task has come in.
+Once an agent reports its task, the task shows on one line under the pane
+header, with how long ago it came in. Click the line for the full text and an
+**Ask for an update** button. Until the first report, the header shows a small
+`task` button instead.
 
 Every shell starts with `TERMINAL_GRID_TASK_FILE` pointing at a file for that
-pane. Anything written there shows up in the card within a second, and emptying
-the file clears it:
+pane. Anything written there shows up in the header within a second, and
+emptying the file clears it:
 
 ```
 echo "Adding retries to the upload client" > "$TERMINAL_GRID_TASK_FILE"
@@ -241,10 +243,22 @@ echo "Adding retries to the upload client" > "$TERMINAL_GRID_TASK_FILE"
 
 Agents don't know about this on their own. You can tell them in two ways:
 
-- **Ask agent** in the card types a one line request into the pane, so the
-  agent writes its task now.
+- **Ask agent** behind the `task` button types a one line request into the
+  pane, so the agent writes its task now.
 - **Copy instructions** copies a short section for `CLAUDE.md` or `AGENTS.md`,
   so the agent keeps the file up to date without being asked.
+
+## Worktrees
+
+A small fork icon in front of the branch means the pane is in a linked git
+worktree, not the main checkout. When the repo has more than one worktree, the
+branch gets a `▾` and opens a list of them:
+
+- At a shell prompt, picking one types a `cd` into the pane.
+- If another pane already has that worktree open, picking it jumps to that pane.
+- While an agent runs in the pane, picking one opens a new pane there instead,
+  so nothing is typed into the agent.
+- Shift+click always opens a new pane.
 
 ## Notes
 

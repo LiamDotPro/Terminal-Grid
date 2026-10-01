@@ -62,6 +62,12 @@ export function PaneGrid() {
                   onClose={() => void actions.closeTerminal(id)}
                   onRestart={() => void actions.restartTerminal(id)}
                   onAskForTask={() => void actions.askAgentForTask(id)}
+                  onPickWorktree={(worktree, newPane) => {
+                    if (newPane) void actions.newTerminalIn(id, worktree.key);
+                    else if (worktree.move === "focus" && worktree.openIn) actions.focusTerminal(worktree.openIn);
+                    else if (worktree.move === "cd") void actions.changeDirectory(id, worktree.key);
+                    else if (worktree.move === "new-pane") void actions.newTerminalIn(id, worktree.key);
+                  }}
                 />
               );
             })}

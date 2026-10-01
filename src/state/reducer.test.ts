@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { TerminalInfo } from "../ipc/types";
+import type { GitInfo, TerminalInfo, Worktree } from "../ipc/types";
 import { paneStatus, toPaneView } from "./model";
 import { initialState, reducer, totalPages, visibleIds, type AppState } from "./reducer";
 
@@ -187,6 +187,84 @@ describe("agent task", () => {
     expect(started(reported).terminals.t0.task).toBeNull();
     const exited = reducer(reported, { type: "terminal/exited", id: "t0", code: 0 });
     expect(exited.terminals.t0.task).toBeNull();
+  });
+});
+
+describe("worktree menu", () => {
+  const worktree = (path: string, branch: string, extra: Partial<Worktree> = {}): Worktree => ({
+    path,
+    head: "3f2a91c",
+    branch,
+    isMain: false,
+    isCurrent: false,
+    detached: false,
+    locked: false,
+    prunable: false,
+    openIn: [],
+    ...extra,
+  });
+  const git = (worktrees: Worktree[], isWorktree: boolean): GitInfo => ({
+    inRepo: true,
+    repoRoot: "C:/dev/app-feature",
+    commonDir: "C:/dev/app/.git",
+    repoName: "app",
+    branch: "feature",
+    headShort: "3f2a91c",
+    userName: null,
+    userEmail: null,
+    remoteUrl: null,
+    dirty: false,
+    ahead: 0,
+    behind: 0,
+    isWorktree,
+    worktrees,
+  });
+  const repo = (state: AppState, info: GitInfo) => reducer(state, { type: "terminal/git", id: "t0", info });
+  const view = (state: AppState) =>
+    toPaneView(state.terminals.t0, 0, {
+      now: state.now,
+      idleTimeoutMs: 4000,
+      focusedId: state.focusedId,
+      paneNumbers: new Map([
+        ["t0", 1],
+        ["t1", 2],
+      ]),
+    });
+  const worktrees = [
+    worktree("C:/dev/app", "main", { isMain: true }),
+    worktree("C:/dev/app-feature", "feature", { isCurrent: true }),
+    worktree("C:/dev/app-fix", "fix", { openIn: ["t1"] }),
+    worktree("C:/dev/app-spike", "spike"),
+    worktree("C:/dev/app-gone", "gone", { prunable: true }),
+  ];
+
+  it("marks a linked worktree and says what picking each entry does", () => {
+    const pane = view(repo(withTerminals(2), git(worktrees, true)));
+    expect(pane.inWorktree).toBe(true);
+    expect(pane.worktrees.map((w) => [w.name, w.move, w.paneNumber])).toEqual([
+      ["main", "cd", null],
+      ["feature", "here", null],
+      ["fix", "focus", 2],
+      ["spike", "cd", null],
+      ["gone", "none", null],
+    ]);
+  });
+
+  it("opens a new pane instead of typing a cd into a running agent", () => {
+    const state = reducer(repo(withTerminals(2), git(worktrees, true)), {
+      type: "terminal/agent",
+      event: { id: "t0", event: "started", name: "claude", source: "process" },
+    });
+    expect(view(state).worktrees.find((w) => w.name === "spike")?.move).toBe("new-pane");
+  });
+
+  it("only types a cd while the shell sits at its prompt", () => {
+    const spike = (state: AppState) => view(state).worktrees.find((w) => w.name === "spike")?.move;
+    const prompt = (state: AppState, atPrompt: boolean) =>
+      reducer(state, { type: "terminal/prompt", id: "t0", atPrompt });
+    const state = repo(withTerminals(2), git(worktrees, true));
+    expect(spike(prompt(state, false))).toBe("new-pane");
+    expect(spike(prompt(prompt(state, false), true))).toBe("cd");
   });
 });
 
