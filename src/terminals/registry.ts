@@ -47,8 +47,19 @@ const NOOP_CALLBACKS: RegistryCallbacks = {
   onFocus: () => {},
 };
 
+/** Cap on output held for a session whose terminal does not exist yet. */
+const EARLY_OUTPUT_LIMIT = 256 * 1024;
+
 export class TerminalRegistry {
   private readonly entries = new Map<TerminalId, Entry>();
+  /**
+   * Output that arrived before the session's terminal was created. A shell
+   * spawned under ConPTY asks for the cursor position and blocks until the
+   * terminal answers, so dropping these bytes hangs it before its first
+   * prompt; on session restore that was every pane but the last.
+   */
+  private readonly early = new Map<TerminalId, Uint8Array[]>();
+  private readonly disposed = new Set<TerminalId>();
   private callbacks: RegistryCallbacks = NOOP_CALLBACKS;
   private modifier: HotkeyModifier = "ctrl+alt";
   private options: Pick<Config, "fontFamily" | "fontSize" | "scrollback"> = {
@@ -153,6 +164,12 @@ export class TerminalRegistry {
     };
     entry.observer.observe(host);
     this.entries.set(id, entry);
+
+    const early = this.early.get(id);
+    if (early) {
+      this.early.delete(id);
+      for (const chunk of early) term.write(chunk);
+    }
     return entry;
   }
 
@@ -165,7 +182,10 @@ export class TerminalRegistry {
 
   write(id: TerminalId, data: Uint8Array): void {
     const entry = this.entries.get(id);
-    if (!entry) return;
+    if (!entry) {
+      if (!this.disposed.has(id)) this.hold(id, data);
+      return;
+    }
     entry.lastOutputAt = Date.now();
     entry.term.write(data);
   }
@@ -216,6 +236,8 @@ export class TerminalRegistry {
   }
 
   dispose(id: TerminalId): void {
+    this.early.delete(id);
+    this.disposed.add(id);
     const entry = this.entries.get(id);
     if (!entry) return;
     entry.observer.disconnect();
@@ -227,6 +249,15 @@ export class TerminalRegistry {
 
   disposeAll(): void {
     for (const id of [...this.entries.keys()]) this.dispose(id);
+  }
+
+  private hold(id: TerminalId, data: Uint8Array): void {
+    const chunks = this.early.get(id) ?? [];
+    let size = chunks.reduce((total, chunk) => total + chunk.length, data.length);
+    // Keep the newest bytes when a session floods before it is shown.
+    while (size > EARLY_OUTPUT_LIMIT && chunks.length > 0) size -= chunks.shift()!.length;
+    chunks.push(data);
+    this.early.set(id, chunks);
   }
 
   private applyOptions(term: Terminal): void {
