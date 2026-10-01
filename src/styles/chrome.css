@@ -238,10 +238,6 @@
   background: var(--fill-hover);
 }
 
-.winbtn--maximize {
-  font-size: 11px;
-}
-
 /* Stands in for the maximize button while fullscreen, so the state is named
    on screen and leaving it is one click. */
 .winbtn--fullscreen {

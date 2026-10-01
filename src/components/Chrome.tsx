@@ -79,6 +79,31 @@ function FullscreenGlyph({ exit = false }: { exit?: boolean }) {
 }
 
 /**
+ * A window with a title bar, so it reads as "window" next to the full screen
+ * brackets; restoring shows a second window stacked behind it.
+ */
+function MaximizeGlyph({ restore = false }: { restore?: boolean }) {
+  return (
+    <svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true" focusable="false">
+      <g fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        {restore ? (
+          <>
+            <path d="M4.75 3.75V3A1.25 1.25 0 0 1 6 1.75h5A1.25 1.25 0 0 1 12.25 3v5A1.25 1.25 0 0 1 11 9.25h-.75" />
+            <rect x="1.75" y="4.75" width="7.5" height="7.5" rx="1.25" />
+            <path d="M1.75 7.5h7.5" />
+          </>
+        ) : (
+          <>
+            <rect x="1.75" y="1.75" width="10.5" height="10.5" rx="1.5" />
+            <path d="M1.75 5h10.5" />
+          </>
+        )}
+      </g>
+    </svg>
+  );
+}
+
+/**
  * The window bar: brand, tab switcher, pager, pane/hotkey/settings actions and
  * the window controls. It is also the drag region, so the app can run without
  * native decorations the way the design draws it.
@@ -243,12 +268,12 @@ export function Chrome({ frame }: { frame: WindowFrame }) {
               </button>
               <button
                 type="button"
-                className="winbtn winbtn--maximize"
+                className="winbtn"
                 aria-label={frame === "maximized" ? "Restore" : "Maximize"}
                 title={frame === "maximized" ? "Restore" : "Maximize"}
                 onClick={() => void actions.toggleMaximize()}
               >
-                {frame === "maximized" ? "❐" : "▢"}
+                <MaximizeGlyph restore={frame === "maximized"} />
               </button>
             </>
           )}
