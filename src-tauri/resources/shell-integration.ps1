@@ -15,7 +15,9 @@ function global:prompt {
     $esc = [char]27; $bel = [char]7
 
     $h = Get-History -Count 1
-    if ($h -and $h.Id -ne $global:__tg_last_history_id) {
+    # The -Command line that loaded this script is history entry 1; it is not
+    # something the user ran, so it is never reported as the last command.
+    if ($h -and $h.Id -ne $global:__tg_last_history_id -and $h.CommandLine -notlike '*shell-integration.ps1*') {
         $global:__tg_last_history_id = $h.Id
         $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($h.CommandLine))
         Write-Host -NoNewline "$esc]7777;cmd;$b64$bel"
