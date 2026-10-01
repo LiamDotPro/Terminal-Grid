@@ -115,6 +115,11 @@ fn integration_args(kind: ShellKind, script_dir: &Path) -> Vec<String> {
 
 /// Copies the bundled integration scripts into the app data dir on first run.
 /// They are re-copied on every launch so an app update refreshes them.
+///
+/// Only the contents are copied. `fs::copy` on Windows also copies alternate
+/// data streams, so a script installed from a downloaded installer kept its
+/// Mark of the Web and RemoteSigned refused to run it. Removing the old copy
+/// first matters too: rewriting a file in place keeps its streams.
 pub fn install_scripts(resource_dir: &Path, target_dir: &Path) -> std::io::Result<()> {
     fs::create_dir_all(target_dir)?;
     for name in ["shell-integration.ps1", "shell-integration.sh"] {
@@ -125,7 +130,13 @@ pub fn install_scripts(resource_dir: &Path, target_dir: &Path) -> std::io::Resul
             resource_dir.join(name)
         };
         if source.exists() {
-            fs::copy(&source, target_dir.join(name))?;
+            let target = target_dir.join(name);
+            let contents = fs::read(&source)?;
+            match fs::remove_file(&target) {
+                Err(error) if error.kind() != std::io::ErrorKind::NotFound => return Err(error),
+                _ => {}
+            }
+            fs::write(&target, contents)?;
         }
     }
     Ok(())
@@ -166,10 +177,13 @@ mod tests {
     #[test]
     fn classifies_shells_by_executable_name() {
         assert_eq!(ShellKind::from_program("pwsh.exe"), ShellKind::Pwsh);
+        // Backslashes only separate path segments on Windows.
+        #[cfg(windows)]
         assert_eq!(
             ShellKind::from_program(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.EXE"),
             ShellKind::WindowsPowerShell
         );
+        assert_eq!(ShellKind::from_program("/usr/local/bin/pwsh"), ShellKind::Pwsh);
         assert_eq!(ShellKind::from_program("/bin/zsh"), ShellKind::Zsh);
         assert_eq!(ShellKind::from_program("nu"), ShellKind::Other);
     }
@@ -179,6 +193,31 @@ mod tests {
         let args = integration_args(ShellKind::Pwsh, Path::new("C:/data"));
         assert_eq!(args[0], "-NoLogo");
         assert!(args.last().unwrap().contains("shell-integration.ps1"));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn installed_scripts_drop_the_mark_of_the_web() {
+        let root = std::env::temp_dir().join(format!("tg-install-{}", uuid::Uuid::new_v4()));
+        let resources = root.join("resources");
+        let target = root.join("data");
+        fs::create_dir_all(&resources).unwrap();
+        fs::create_dir_all(&target).unwrap();
+
+        let mark = "[ZoneTransfer]\r\nZoneId=3\r\n";
+        let source = resources.join("shell-integration.ps1");
+        fs::write(&source, "# integration").unwrap();
+        fs::write(format!("{}:Zone.Identifier", source.display()), mark).unwrap();
+        // An older install whose copy already carries the mark.
+        let installed = target.join("shell-integration.ps1");
+        fs::write(&installed, "# old").unwrap();
+        fs::write(format!("{}:Zone.Identifier", installed.display()), mark).unwrap();
+
+        install_scripts(&root, &target).unwrap();
+
+        assert_eq!(fs::read_to_string(&installed).unwrap(), "# integration");
+        assert!(fs::metadata(format!("{}:Zone.Identifier", installed.display())).is_err());
+        fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
