@@ -423,10 +423,18 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(windows)]
     fn paths_compare_case_insensitively_on_windows() {
         let a = key_for(Path::new(r"C:\Dev\App"));
         let b = key_for(Path::new("c:/dev/app/"));
         assert_eq!(a, b);
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn paths_compare_case_sensitively_elsewhere() {
+        assert_eq!(key_for(Path::new("/dev/app/")), key_for(Path::new("/dev/app")));
+        assert_ne!(key_for(Path::new("/Dev/App")), key_for(Path::new("/dev/app")));
     }
 
     #[test]
@@ -459,7 +467,13 @@ mod tests {
     #[test]
     fn a_relative_common_dir_is_resolved_against_the_repo_root() {
         assert_eq!(absolutise("C:/dev/app", ".git"), "C:/dev/app/.git");
-        assert_eq!(absolutise("C:/dev/app", "C:/dev/app/.git"), "C:/dev/app/.git");
+        assert_eq!(absolutise("/dev/app", "../shared.git"), "/dev/app/../shared.git");
+    }
+
+    #[test]
+    fn an_absolute_common_dir_is_kept() {
+        let dir = if cfg!(windows) { "C:/dev/app/.git" } else { "/dev/app/.git" };
+        assert_eq!(absolutise("/elsewhere", dir), dir);
     }
 
     #[test]
