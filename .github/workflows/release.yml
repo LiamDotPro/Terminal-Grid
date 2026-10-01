@@ -54,7 +54,7 @@ jobs:
           | Platform | File |
           |---|---|
           | Windows 10 1809+ | `*_x64-setup.exe` (per user, no admin, recommended) or `*_x64_en-US.msi` |
-          | macOS 11+ (Apple Silicon and Intel) | `*_universal.dmg` |
+          | macOS (Apple Silicon and Intel) | `*_universal.dmg` |
           | Linux x64 | `*_amd64.AppImage`, `*_amd64.deb` or `*.x86_64.rpm` |
 
           The macOS build is not notarized yet. If macOS says the app is damaged,
