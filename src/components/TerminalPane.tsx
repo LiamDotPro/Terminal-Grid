@@ -17,6 +17,9 @@ interface TerminalPaneProps {
   onRestart: () => void;
   /** Asks the pane's agent to report what it is working on. */
   onAskForTask: () => void;
+  /** Agent CLIs on PATH, offered as launchers while no agent runs. */
+  agents: string[];
+  onLaunchAgent: (agent: string) => void;
 }
 
 export function TerminalPane({
@@ -27,9 +30,12 @@ export function TerminalPane({
   onClose,
   onRestart,
   onAskForTask,
+  agents,
+  onLaunchAgent,
 }: TerminalPaneProps) {
   const [taskOpen, setTaskOpen] = useState(false);
   const showDetail = !compact && view.agent !== null && view.status !== "exited";
+  const showLaunchers = view.agent === null && view.status !== "exited";
   const showSecondRow = view.worktrees.length > 0 || (showDetail && view.lastCommand !== null);
 
   return (
@@ -113,6 +119,22 @@ export function TerminalPane({
               task
             </button>
           )}
+
+          {showLaunchers &&
+            agents.map((agent) => (
+              <button
+                key={agent}
+                type="button"
+                className="pane__launch"
+                title={`Run ${agent} in this pane`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onLaunchAgent(agent);
+                }}
+              >
+                {agent}
+              </button>
+            ))}
 
           <OpenFromButton n={view.n} onOpenFrom={onOpenFrom} />
 

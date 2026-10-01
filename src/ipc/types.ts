@@ -185,6 +185,10 @@ export interface Commands {
   report_cwd: { in: { id: TerminalId; cwd: string }; out: void };
   set_focused_terminal: { in: { id: TerminalId | null }; out: void };
 
+  // agents
+  /** Agent CLIs found on PATH, for the pane header launchers. */
+  installed_agents: { in: Record<string, never>; out: string[] };
+
   // git
   get_git_info: { in: { id: TerminalId }; out: GitInfo };
   refresh_git_info: { in: { id: TerminalId }; out: void };

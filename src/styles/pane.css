@@ -322,6 +322,24 @@
   color: var(--text-strong);
 }
 
+/* Agent launchers: quiet until hovered, so an idle header stays calm. */
+.pane__launch {
+  flex: none;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  font-size: 11px;
+  color: var(--text-55);
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.pane__launch:hover {
+  background: var(--fill-hover);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: var(--text-strong);
+}
+
 /* A reported task lights the dot, so a glance says whether there is one. */
 .pane__task-toggle--reported::before {
   content: "";

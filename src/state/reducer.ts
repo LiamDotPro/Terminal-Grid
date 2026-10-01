@@ -62,6 +62,8 @@ export interface NotesState {
 export interface AppState {
   ready: boolean;
   config: Config;
+  /** Agent CLIs on PATH; each idle pane offers a button to start one. */
+  installedAgents: string[];
   activeTab: "terminals" | "notes";
   order: TerminalId[];
   terminals: Record<TerminalId, TerminalState>;
@@ -81,6 +83,7 @@ export interface AppState {
 export const initialState: AppState = {
   ready: false,
   config: DEFAULT_CONFIG,
+  installedAgents: [],
   activeTab: "terminals",
   order: [],
   terminals: {},
@@ -111,6 +114,7 @@ export const initialState: AppState = {
 export type Action =
   | { type: "ready"; config: Config; session: Session | null }
   | { type: "config/set"; config: Config }
+  | { type: "agents/installed"; agents: string[] }
   | { type: "tab/set"; tab: "terminals" | "notes" }
   | { type: "tab/toggle" }
   | { type: "page/set"; page: number }
@@ -175,6 +179,9 @@ export function reducer(state: AppState, action: Action): AppState {
 
     case "config/set":
       return { ...state, config: action.config };
+
+    case "agents/installed":
+      return { ...state, installedAgents: action.agents };
 
     case "tab/set":
       return { ...state, activeTab: action.tab, hotkeysOpen: false };

@@ -19,6 +19,8 @@ terminals.
 - **Git aware panes**: repository name, branch and worktrees in every header.
 - **Agent detection**: a pane lights up while Claude Code, Codex, Gemini, Aider
   and friends run, and turns green when they finish.
+- **One click launchers**: an idle pane's header has a small button for each
+  agent CLI found on your PATH, so only the ones you have installed show.
 - **Current task** card: agents report what they are doing into a file and the
   pane shows it.
 - **Notes**: plain `.md` files with a live preview, autosaved.
