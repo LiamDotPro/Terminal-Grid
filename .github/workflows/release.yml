@@ -13,6 +13,11 @@
 #
 # "Run workflow" from the Actions tab builds every platform without releasing;
 # the bundles are kept as workflow artifacts.
+#
+# The macOS app is signed with a Developer ID certificate and notarized by Apple
+# when the APPLE_* repository secrets are set (docs/macos-signing.md lists
+# them). Without them it is built unsigned and the release notes say how to get
+# past Gatekeeper.
 
 name: Release
 
@@ -41,6 +46,8 @@ jobs:
       # actions/checkout turns the tag into a lightweight one; fetch it again to
       # get the annotation.
       - name: Read the tag message
+        env:
+          MAC_SIGNED: ${{ secrets.APPLE_CERTIFICATE != '' }}
         run: |
           git fetch --force origin "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
           git tag -l --format='%(contents:body)' "$GITHUB_REF_NAME" > notes.md
@@ -56,10 +63,14 @@ jobs:
           | Windows 10 1809+ | `*_x64-setup.exe` (per user, no admin, recommended) or `*_x64_en-US.msi` |
           | macOS (Apple Silicon and Intel) | `*_universal.dmg` |
           | Linux x64 | `*_amd64.AppImage`, `*_amd64.deb` or `*.x86_64.rpm` |
+          EOF
+          if [ "$MAC_SIGNED" != "true" ]; then
+            cat >> notes.md <<'EOF'
 
-          The macOS build is not notarized yet. If macOS says the app is damaged,
+          The macOS build is not notarized. If macOS says the app is damaged,
           run `xattr -cr "/Applications/Terminal Grid.app"` once after installing.
           EOF
+          fi
           cat notes.md
 
       - name: Create or reuse the draft release
@@ -133,6 +144,65 @@ jobs:
         run: cargo test
         working-directory: src-tauri
 
+      # The Tauri bundler imports APPLE_CERTIFICATE into a temporary keychain,
+      # signs with hardened runtime, notarizes and staples. It treats a variable
+      # that is set but empty as configured, so only export the ones that hold
+      # a value. Notarization uses an App Store Connect API key if there is
+      # one, otherwise an Apple ID with an app-specific password.
+      - name: macOS signing credentials
+        if: matrix.name == 'macos'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -z "$APPLE_CERTIFICATE" ]; then
+            echo "::warning::APPLE_CERTIFICATE is not set, so the macOS app is unsigned and Gatekeeper will block it."
+            exit 0
+          fi
+
+          export_var() {
+            # Heredoc form so a value with newlines cannot break GITHUB_ENV.
+            { echo "$1<<APPLE_ENV_EOF"; printf '%s\n' "$2"; echo "APPLE_ENV_EOF"; } >> "$GITHUB_ENV"
+          }
+
+          if [ -z "$APPLE_CERTIFICATE_PASSWORD" ]; then
+            echo "::error::APPLE_CERTIFICATE is set but APPLE_CERTIFICATE_PASSWORD is not."
+            exit 1
+          fi
+          export_var APPLE_CERTIFICATE "$APPLE_CERTIFICATE"
+          export_var APPLE_CERTIFICATE_PASSWORD "$APPLE_CERTIFICATE_PASSWORD"
+          if [ -n "$APPLE_SIGNING_IDENTITY" ]; then
+            export_var APPLE_SIGNING_IDENTITY "$APPLE_SIGNING_IDENTITY"
+          fi
+
+          # A signed but un-notarized app is still blocked by Gatekeeper, so a
+          # certificate without notarization credentials is a configuration
+          # mistake rather than something to ship.
+          if [ -n "$APPLE_API_KEY" ] && [ -n "$APPLE_API_ISSUER" ] && [ -n "$APPLE_API_PRIVATE_KEY" ]; then
+            key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY}.p8"
+            printf '%s\n' "$APPLE_API_PRIVATE_KEY" > "$key_path"
+            export_var APPLE_API_KEY "$APPLE_API_KEY"
+            export_var APPLE_API_ISSUER "$APPLE_API_ISSUER"
+            export_var APPLE_API_KEY_PATH "$key_path"
+            echo "Signing, and notarizing with App Store Connect API key $APPLE_API_KEY."
+          elif [ -n "$APPLE_ID" ] && [ -n "$APPLE_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+            export_var APPLE_ID "$APPLE_ID"
+            export_var APPLE_PASSWORD "$APPLE_PASSWORD"
+            export_var APPLE_TEAM_ID "$APPLE_TEAM_ID"
+            echo "Signing, and notarizing with Apple ID."
+          else
+            echo "::error::APPLE_CERTIFICATE is set but notarization credentials are not. Set APPLE_API_KEY, APPLE_API_ISSUER and APPLE_API_PRIVATE_KEY, or APPLE_ID, APPLE_PASSWORD and APPLE_TEAM_ID."
+            exit 1
+          fi
+          echo "MAC_SIGNED=true" >> "$GITHUB_ENV"
+
       - name: Build and upload to the draft release
         uses: tauri-apps/tauri-action@v1
         env:
@@ -143,6 +213,16 @@ jobs:
           # Empty on a manual run, so the action only builds.
           releaseId: ${{ needs.draft.outputs.release_id }}
           uploadWorkflowArtifacts: true
+
+      # Fails the build rather than publishing an app Gatekeeper would reject.
+      - name: Verify the macOS signature and notarization
+        if: matrix.name == 'macos' && env.MAC_SIGNED == 'true'
+        run: |
+          app="src-tauri/target/universal-apple-darwin/release/bundle/macos/Terminal Grid.app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign --display --verbose=2 "$app" 2>&1 | grep -E '^(Authority|TeamIdentifier|Runtime)'
+          xcrun stapler validate "$app"
+          spctl --assess --type execute --verbose=2 "$app"
 
       - name: Package unsigned MSIX for the Microsoft Store
         if: matrix.name == 'windows'

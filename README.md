@@ -152,6 +152,10 @@ workflow builds every platform without releasing. Pushes and pull requests run
 [`ci.yml`](.github/workflows/ci.yml): the tests and frontend build on all three
 platforms.
 
+The macOS app is signed with a Developer ID certificate and notarized when the
+`APPLE_*` repository secrets are set; `docs/macos-signing.md` covers the
+certificate, the secrets and how to test it.
+
 Microsoft Store submission (MSIX via `scripts/pack-msix.ps1`) and the Mac App
 Store assessment are in `docs/store-publishing.md`.
 
