@@ -1,4 +1,4 @@
-import { LAYOUT_MODES, type LayoutMode } from "../ipc/layout";
+import { LAYOUT_MODES, pageSlice, type LayoutMode } from "../ipc/layout";
 import { cx } from "../lib/cx";
 import { modifierLabel } from "../lib/hotkeys";
 import type { WindowFrame } from "../lib/windowFrame";
@@ -113,7 +113,8 @@ export function Chrome({ frame }: { frame: WindowFrame }) {
   const actions = useAppActions();
   const pages = totalPages(state);
   const isTerminals = state.activeTab === "terminals";
-  const showPager = isTerminals && pages > 1;
+  const inFocus = isTerminals && state.focusMode;
+  const showPager = isTerminals && pages > 1 && !inFocus;
   const fullscreen = frame === "fullscreen";
   // Nothing to drag while fullscreen, and a double-click there would maximize
   // the window underneath without anything visibly changing.
@@ -123,7 +124,7 @@ export function Chrome({ frame }: { frame: WindowFrame }) {
     <header className="chrome" data-tauri-drag-region={dragRegion}>
       <div className="chrome__brand" data-tauri-drag-region={dragRegion}>
         <BrandMark />
-        <span className="chrome__title">Terminal Grid</span>
+        {inFocus ? <FocusPills /> : <span className="chrome__title">Terminal Grid</span>}
       </div>
 
       <div className="chrome__center" data-tauri-drag-region={dragRegion}>
@@ -176,7 +177,7 @@ export function Chrome({ frame }: { frame: WindowFrame }) {
           </div>
         )}
 
-        {isTerminals && state.order.length > 0 && (
+        {isTerminals && state.order.length > 0 && !inFocus && (
           <div
             className="layout-switch"
             role="radiogroup"
@@ -288,5 +289,52 @@ export function Chrome({ frame }: { frame: WindowFrame }) {
         </div>
       </div>
     </header>
+  );
+}
+
+/**
+ * Focus mode's left of the bar (design screen 2a): back to the grid, and the
+ * page's other panes as numbered pills; a green dot marks one that finished.
+ */
+function FocusPills() {
+  const state = useAppState();
+  const actions = useAppActions();
+  const mod = modifierLabel(state.config.hotkeyModifier);
+  const ids = pageSlice(state.order, state.page);
+
+  return (
+    <>
+      <button
+        type="button"
+        className="chrome__back"
+        title={`Back to grid (${mod}+Enter)`}
+        onClick={actions.closeReview}
+      >
+        <span className="chrome__back-glyph" aria-hidden="true">
+          ‹
+        </span>
+        Grid
+      </button>
+      <div className="chrome__pills" role="tablist" aria-label="Panes">
+        {ids.map((id, index) => {
+          const current = id === state.focusedId;
+          const finished = Boolean(state.terminals[id]?.finished);
+          return (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={current}
+              className={cx("chrome__pill", current && "chrome__pill--current")}
+              title={`Review pane ${index + 1}${finished ? " · finished" : ""} (${mod}+${index + 1})`}
+              onClick={() => actions.openReview(id)}
+            >
+              {index + 1}
+              {finished && <span className="chrome__pill-dot" aria-hidden="true" />}
+            </button>
+          );
+        })}
+      </div>
+    </>
   );
 }

@@ -137,6 +137,9 @@ function useGlobalHotkeys(): void {
         case "toggle-fullscreen":
           void actions.toggleFullscreen();
           break;
+        case "toggle-review":
+          actions.toggleReview();
+          break;
       }
     };
 

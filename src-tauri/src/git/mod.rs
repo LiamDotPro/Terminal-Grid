@@ -1,6 +1,7 @@
 //! Git labels and worktrees. See docs/technical-design.md section 7.
 
 pub mod cli;
+pub mod review;
 pub mod worktree;
 
 use std::collections::{HashMap, HashSet};

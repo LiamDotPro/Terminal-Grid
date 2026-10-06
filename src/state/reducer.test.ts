@@ -370,3 +370,56 @@ describe("notes", () => {
     expect(state.notes.content).toBe("mine");
   });
 });
+
+describe("focus + review", () => {
+  const comment = (id: string, path = "src/a.ts") => ({
+    id,
+    repoRoot: "C:/dev/app",
+    path,
+    line: 3,
+    lineText: "const a = 1;",
+    text: "rename this",
+    status: "pending" as const,
+    createdAt: 0,
+  });
+
+  it("toggles focus mode on the focused pane and back", () => {
+    const state = reducer(withTerminals(3), { type: "review/toggle" });
+    expect(state.focusMode).toBe(true);
+    expect(state.activeTab).toBe("terminals");
+    expect(reducer(state, { type: "review/toggle" }).focusMode).toBe(false);
+  });
+
+  it("does nothing without a pane", () => {
+    expect(reducer(initialState, { type: "review/toggle" }).focusMode).toBe(false);
+  });
+
+  it("opens on another pane by focusing it", () => {
+    const state = reducer(withTerminals(3), { type: "review/open", id: "t2" });
+    expect(state.focusMode).toBe(true);
+    expect(state.focusedId).toBe("t2");
+  });
+
+  it("leaves focus mode when the last pane closes", () => {
+    let state = reducer(withTerminals(1), { type: "review/toggle" });
+    state = reducer(state, { type: "terminal/removed", id: "t0" });
+    expect(state.focusMode).toBe(false);
+  });
+
+  it("marks a sent batch and re-pends a reworded comment", () => {
+    let state = reducer(initialState, { type: "review/comment-add", comment: comment("a") });
+    state = reducer(state, { type: "review/comment-add", comment: comment("b") });
+    state = reducer(state, { type: "review/sent", ids: ["a", "b"], repoRoot: "C:/dev/app", paneId: "t0", at: 5 });
+    expect(state.review.comments.map((c) => c.status)).toEqual(["sent", "sent"]);
+    expect(state.review.sent).toEqual({ repoRoot: "C:/dev/app", paneId: "t0", count: 2, at: 5 });
+    state = reducer(state, { type: "review/comment-edit", id: "a", text: "again" });
+    expect(state.review.comments[0]).toMatchObject({ text: "again", status: "pending" });
+  });
+
+  it("forgets the comments on committed files only", () => {
+    let state = reducer(initialState, { type: "review/comment-add", comment: comment("a", "src/a.ts") });
+    state = reducer(state, { type: "review/comment-add", comment: comment("b", "src/b.ts") });
+    state = reducer(state, { type: "review/forget", repoRoot: "C:/dev/app", paths: ["src/a.ts"] });
+    expect(state.review.comments.map((c) => c.id)).toEqual(["b"]);
+  });
+});

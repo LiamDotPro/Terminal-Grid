@@ -46,6 +46,44 @@ export interface GitInfo {
   worktrees: Worktree[];
 }
 
+// Review (focus mode) -----------------------------------------------------
+
+/** "?" is an untracked file, "!" a merge conflict; the rest are git's own letters. */
+export type ChangeStatus = "M" | "A" | "D" | "R" | "C" | "T" | "?" | "!";
+
+export interface ChangedFile {
+  /** Relative to the repository root, forward slashes. */
+  path: string;
+  oldPath: string | null;
+  status: ChangeStatus;
+  additions: number | null;
+  deletions: number | null;
+  binary: boolean;
+}
+
+export interface ReviewStatus {
+  repoRoot: string;
+  branch: string | null;
+  head: string | null;
+  headShort: string | null;
+  staged: ChangedFile[];
+  unstaged: ChangedFile[];
+}
+
+/**
+ * The versions a file's diff is drawn between: HEAD to index for a staged
+ * file, index to working tree for an unstaged one. `disk` is what the editor
+ * opens. Text is null where the file does not exist, or is binary or too large.
+ */
+export interface FileVersions {
+  old: string | null;
+  new: string | null;
+  disk: string | null;
+  diskMtimeMs: number | null;
+  binary: boolean;
+  tooLarge: boolean;
+}
+
 // Notes -------------------------------------------------------------------
 
 export type NodeKind = "file" | "folder";
@@ -197,6 +235,19 @@ export interface Commands {
   // git
   get_git_info: { in: { id: TerminalId }; out: GitInfo };
   refresh_git_info: { in: { id: TerminalId }; out: void };
+
+  // review (focus mode)
+  review_status: { in: { id: TerminalId }; out: ReviewStatus };
+  review_file: {
+    in: { id: TerminalId; path: string; oldPath: string | null; staged: boolean };
+    out: FileVersions;
+  };
+  review_stage: { in: { id: TerminalId; paths: string[] }; out: void };
+  review_unstage: { in: { id: TerminalId; paths: string[] }; out: void };
+  review_write_file: {
+    in: { id: TerminalId; path: string; content: string; expectedMtimeMs?: number };
+    out: { mtimeMs: number };
+  };
 
   // notes
   notes_get_root: { in: Record<string, never>; out: { root: string } };

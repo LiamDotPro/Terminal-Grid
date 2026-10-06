@@ -116,6 +116,11 @@ pub fn run() {
             // git
             git::get_git_info,
             git::refresh_git_info,
+            git::review::review_status,
+            git::review::review_file,
+            git::review::review_stage,
+            git::review::review_unstage,
+            git::review::review_write_file,
             // notes
             notes::notes_get_root,
             notes::notes_set_root,

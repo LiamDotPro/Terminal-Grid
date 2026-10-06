@@ -22,10 +22,29 @@ pub struct GitOutput {
     pub stderr: String,
 }
 
+/// Like `GitOutput`, with stdout kept as bytes: file contents read out of the
+/// index or a commit may not be text.
+pub struct RawOutput {
+    pub ok: bool,
+    pub stdout: Vec<u8>,
+    pub stderr: String,
+}
+
 /// Runs git in `cwd`. Returns Err only when git could not be run at all or the
 /// call timed out; a non-zero exit is reported through `GitOutput::ok`, because
 /// plenty of the calls here fail legitimately (no upstream, no origin, ...).
 pub fn run(cwd: &Path, args: &[&str]) -> Result<GitOutput> {
+    let raw = run_raw(cwd, args, TIMEOUT)?;
+    Ok(GitOutput {
+        ok: raw.ok,
+        stdout: String::from_utf8_lossy(&raw.stdout).into_owned(),
+        stderr: raw.stderr,
+    })
+}
+
+/// `run` with raw stdout and a caller chosen timeout, for the review commands
+/// that read blobs or stage files and may take longer than a label lookup.
+pub fn run_raw(cwd: &Path, args: &[&str], timeout: Duration) -> Result<RawOutput> {
     let mut command = Command::new("git");
     command
         .args(args)
@@ -61,7 +80,7 @@ pub fn run(cwd: &Path, args: &[&str]) -> Result<GitOutput> {
     let stdout = child.stdout.take().map(drain);
     let stderr = child.stderr.take().map(drain);
 
-    let deadline = Instant::now() + TIMEOUT;
+    let deadline = Instant::now() + timeout;
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break status,
@@ -83,10 +102,13 @@ pub fn run(cwd: &Path, args: &[&str]) -> Result<GitOutput> {
         }
     };
 
-    Ok(GitOutput {
+    Ok(RawOutput {
         ok: status.success(),
         stdout: stdout.and_then(|handle| handle.join().ok()).unwrap_or_default(),
-        stderr: stderr.and_then(|handle| handle.join().ok()).unwrap_or_default(),
+        stderr: stderr
+            .and_then(|handle| handle.join().ok())
+            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+            .unwrap_or_default(),
     })
 }
 
@@ -105,10 +127,10 @@ pub fn value(cwd: &Path, args: &[&str]) -> Option<String> {
         .filter(|text| !text.is_empty())
 }
 
-fn drain<R: Read + Send + 'static>(mut reader: R) -> std::thread::JoinHandle<String> {
+fn drain<R: Read + Send + 'static>(mut reader: R) -> std::thread::JoinHandle<Vec<u8>> {
     std::thread::spawn(move || {
         let mut buffer = Vec::new();
         let _ = reader.read_to_end(&mut buffer);
-        String::from_utf8_lossy(&buffer).into_owned()
+        buffer
     })
 }

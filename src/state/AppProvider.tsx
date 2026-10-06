@@ -19,26 +19,30 @@ import { call, decodeB64, on } from "../ipc/client";
 import { EVENTS } from "../ipc/types";
 import type {
   AgentEvent,
+  ChangedFile,
   Config,
   CwdEvent,
   ExitEvent,
+  FileVersions,
   GitEvent,
   NodeKind,
   NotesChangedEvent,
   OutputEvent,
   StatsEvent,
   TaskEvent,
+  ReviewStatus,
   TerminalId,
   TerminalInfo,
 } from "../ipc/types";
 import type { LayoutMode } from "../ipc/layout";
 import { TASK_REPORT_PROMPT } from "../lib/agentTask";
+import { reviewMessage, reviewMessageOneLine } from "../lib/review";
 import { errorMessage, isAppError } from "../lib/appError";
 import { cdCommand, clearLineKey } from "../lib/shellCommand";
 import { matchesAgentPattern } from "../terminals/osc";
 import { terminalRegistry } from "../terminals/registry";
 import { closeUnownedTerminals } from "./orphans";
-import { initialState, reducer, toSession, type AppState } from "./reducer";
+import { initialState, reducer, toSession, type AppState, type ReviewComment } from "./reducer";
 
 const AUTOSAVE_DELAY_MS = 600;
 const SESSION_DEBOUNCE_MS = 1000;
@@ -79,6 +83,31 @@ export interface AppActions {
   launchAgent(id: TerminalId, agent: string): Promise<void>;
   movePane(dir: "up" | "down" | "left" | "right"): void;
   moveFocus(dir: "up" | "down" | "left" | "right"): void;
+
+  /** Focus + review on the focused pane, or back to the grid. */
+  toggleReview(): void;
+  /** Focus + review on `id`. */
+  openReview(id: TerminalId): void;
+  closeReview(): void;
+  /** The pane repository's staged and unstaged files. Throws when it is not a repo. */
+  reviewStatus(id: TerminalId): Promise<ReviewStatus>;
+  reviewFile(id: TerminalId, file: ChangedFile, staged: boolean): Promise<FileVersions>;
+  stageFiles(id: TerminalId, paths: string[]): Promise<void>;
+  unstageFiles(id: TerminalId, paths: string[]): Promise<void>;
+  /** Saves the review editor's buffer; throws a Conflict when the file moved on disk. */
+  writeReviewFile(
+    id: TerminalId,
+    path: string,
+    content: string,
+    expectedMtimeMs: number | null,
+  ): Promise<{ mtimeMs: number }>;
+  addComment(comment: Pick<ReviewComment, "repoRoot" | "path" | "line" | "lineText" | "text">): void;
+  editComment(id: string, text: string): void;
+  deleteComment(id: string): void;
+  /** Drops comments on files that were committed. */
+  forgetComments(repoRoot: string, paths: string[]): void;
+  /** Types the pending comments (and a note) into the pane's agent and submits them. */
+  sendReview(id: TerminalId, commentIds: string[], note: string): Promise<boolean>;
 
   saveConfig(patch: Partial<Config>): Promise<void>;
   chooseNotesRoot(): Promise<string | null>;
@@ -565,6 +594,85 @@ export function AppProvider({ children }: { children: ReactNode }) {
           terminalRegistry.focus(id);
         } catch (error) {
           fail(error);
+        }
+      },
+
+      toggleReview: () => {
+        const leaving = stateRef.current.focusMode;
+        dispatch({ type: "review/toggle" });
+        // Back on the grid the keyboard goes where it was before: the terminal.
+        const id = stateRef.current.focusedId;
+        if (leaving && id) window.setTimeout(() => terminalRegistry.focus(id), 0);
+      },
+      openReview: (id) => {
+        dispatch({ type: "review/open", id });
+        void call("set_focused_terminal", { id }).catch(() => {});
+        void refreshGit(id);
+      },
+      closeReview: () => {
+        dispatch({ type: "review/close" });
+        const id = stateRef.current.focusedId;
+        if (id) window.setTimeout(() => terminalRegistry.focus(id), 0);
+      },
+
+      reviewStatus: (id) => call("review_status", { id }),
+      reviewFile: (id, file, staged) =>
+        call("review_file", { id, path: file.path, oldPath: file.oldPath, staged }),
+      stageFiles: async (id, paths) => {
+        try {
+          await call("review_stage", { id, paths });
+        } catch (error) {
+          fail(error);
+        }
+      },
+      unstageFiles: async (id, paths) => {
+        try {
+          await call("review_unstage", { id, paths });
+        } catch (error) {
+          fail(error);
+        }
+      },
+      writeReviewFile: (id, path, content, expectedMtimeMs) =>
+        call("review_write_file", { id, path, content, expectedMtimeMs: expectedMtimeMs ?? undefined }),
+
+      addComment: (comment) =>
+        dispatch({
+          type: "review/comment-add",
+          comment: {
+            ...comment,
+            id: crypto.randomUUID(),
+            status: "pending",
+            createdAt: Date.now(),
+          },
+        }),
+      editComment: (id, text) => dispatch({ type: "review/comment-edit", id, text }),
+      deleteComment: (id) => dispatch({ type: "review/comment-delete", id }),
+      forgetComments: (repoRoot, paths) => dispatch({ type: "review/forget", repoRoot, paths }),
+
+      sendReview: async (id, commentIds, note) => {
+        const wanted = new Set(commentIds);
+        const comments = stateRef.current.review.comments.filter((comment) => wanted.has(comment.id));
+        const term = stateRef.current.terminals[id];
+        if (comments.length === 0 || !term || term.info.exited) return false;
+        try {
+          // A bracketed paste keeps the message's newlines inside the prompt;
+          // without one, a single line is the only safe form.
+          if (!terminalRegistry.paste(id, reviewMessage(comments, note))) {
+            await call("write_terminal", { id, data: reviewMessageOneLine(comments, note) });
+          }
+          await new Promise((resolve) => window.setTimeout(resolve, SUBMIT_DELAY_MS));
+          await call("write_terminal", { id, data: "\r" });
+          dispatch({
+            type: "review/sent",
+            ids: comments.map((comment) => comment.id),
+            repoRoot: comments[0]!.repoRoot,
+            paneId: id,
+            at: Date.now(),
+          });
+          return true;
+        } catch (error) {
+          fail(error);
+          return false;
         }
       },
 

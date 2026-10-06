@@ -30,6 +30,8 @@ describe("matchHotkey with Ctrl+Alt", () => {
     expect(matchHotkey(ctrlAlt("KeyL"), "ctrl+alt")).toEqual({ type: "cycle-layout" });
     expect(matchHotkey(ctrlAlt("KeyB"), "ctrl+alt")).toEqual({ type: "notes-toggle", panel: "tree" });
     expect(matchHotkey(ctrlAlt("KeyP"), "ctrl+alt")).toEqual({ type: "notes-toggle", panel: "preview" });
+    expect(matchHotkey(ctrlAlt("Enter"), "ctrl+alt")).toEqual({ type: "toggle-review" });
+    expect(matchHotkey(ctrlAlt("NumpadEnter"), "ctrl+alt")).toEqual({ type: "toggle-review" });
   });
 
   it("uses Shift to qualify the chord", () => {
@@ -103,7 +105,7 @@ describe("isModifierHeld", () => {
 describe("hotkeyHints", () => {
   it("renders every label with the active modifier", () => {
     const hints = hotkeyHints("ctrl+shift");
-    expect(hints).toHaveLength(12);
+    expect(hints).toHaveLength(13);
     // Alt+Arrow focus movement is the one binding that does not use the chord.
     const chorded = hints.filter((hint) => !hint.key.startsWith("Alt+"));
     expect(chorded).toHaveLength(hints.length - 1);

@@ -202,6 +202,19 @@ export class TerminalRegistry {
     entry.term.write(data);
   }
 
+  /**
+   * Pastes `text` the way a clipboard paste would, so a multi-line message
+   * lands in an agent's prompt without the newlines submitting it. Returns
+   * false, and pastes nothing, when the program in the pane has not turned on
+   * bracketed paste: there every newline would run what came before it.
+   */
+  paste(id: TerminalId, text: string): boolean {
+    const entry = this.entries.get(id);
+    if (!entry?.term.modes.bracketedPasteMode) return false;
+    entry.term.paste(text);
+    return true;
+  }
+
   /** Clears the screen and scrollback, used when a session is restarted. */
   reset(id: TerminalId): void {
     this.entries.get(id)?.term.reset();

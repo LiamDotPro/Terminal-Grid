@@ -33,6 +33,79 @@
   color: var(--text-85);
 }
 
+/* Focus mode: back to the grid and the page's panes as pills (screen 2a). */
+.chrome__back {
+  flex: none;
+  height: 26px;
+  padding: 0 9px 0 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 7px;
+  border: 1px solid rgb(var(--ink-rgb) / 0.14);
+  font-size: 12px;
+  color: var(--text-85);
+}
+
+.chrome__back:hover {
+  background: var(--fill-hover);
+  color: var(--text-strong);
+}
+
+.chrome__back-glyph {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.chrome__pills {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+  /* Room for the finished dot that pokes out of a pill's corner. */
+  padding: 3px 3px 0 0;
+  margin-top: -3px;
+}
+
+.chrome__pill {
+  position: relative;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  background: var(--fill-1);
+  color: var(--text-70);
+  border: 1px solid rgb(var(--ink-rgb) / 0.1);
+}
+
+.chrome__pill:hover {
+  background: var(--fill-4);
+  color: var(--text-strong);
+}
+
+.chrome__pill--current,
+.chrome__pill--current:hover {
+  background: rgb(var(--accent-rgb) / 0.2);
+  color: var(--text-strong);
+  border-color: rgb(var(--accent-rgb) / 0.65);
+}
+
+.chrome__pill-dot {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 0 2px var(--bg-root);
+}
+
 .chrome__center {
   flex: 1;
   display: flex;

@@ -432,6 +432,21 @@ Result is emitted as `terminal://git { id, info }` rather than returned, so a si
 
 Labels: the backend supplies fields only; the design decides how to compose them. Suggested primary label is `repo_name` and `branch`, secondary is `user_name` and the dirty/ahead/behind markers.
 
+### 7.5 Focus + review (`git/review.rs`)
+
+`<mod>+Enter` puts the focused pane next to a review panel for its repository (design turns 2 to 4). The core only reads and writes git; diffs, hunks, comments and the message sent to the agent are frontend logic (`src/lib/diff.ts`, `src/lib/review.ts`).
+
+| Command | Does |
+|---|---|
+| `review_status { id }` | `git status --porcelain=v1 -z` split into `staged` and `unstaged` `ChangedFile`s with `--numstat` line counts, plus `repoRoot`, `branch`, `head`. Untracked files are listed as unstaged with status `?` |
+| `review_file { id, path, oldPath, staged }` | The two versions a diff is drawn between (HEAD → index when staged, index → working tree when not) and the working tree copy for the editor, with its mtime. Binary files and files over 2 MiB come back flagged, without text |
+| `review_stage { id, paths }` / `review_unstage { id, paths }` | `git add -A` / `git restore --staged` (`git rm --cached` before the first commit), with literal pathspecs |
+| `review_write_file { id, path, content, expectedMtimeMs? }` | Atomic write of the editor's buffer; a newer mtime on disk is a `Conflict`, as for notes |
+
+Paths are relative to the repository root and refused when they leave it or point into `.git`. These calls get a 15 s timeout instead of the 3 s used for labels. Staging and saving refresh the pane's git labels.
+
+The panel polls `review_status` every 2.5 s while it is open and on every `terminal://git` for its pane. A new HEAD that took staged files with it is shown as a commit, and the comments on those files are dropped. Comments live in memory, keyed by repository, and are sent to the pane as one bracketed paste followed by Enter, or as one line when the program in the pane has not enabled bracketed paste.
+
 ---
 
 ## 8. Notes subsystem (`notes`)
@@ -541,7 +556,7 @@ Events (Rust → frontend), all emitted to the `main` window:
 | `terminal://task` | `{ id, task: string \| null, updatedAtMs }` when a session's `TERMINAL_GRID_TASK_FILE` changes (section 5.5) |
 | `notes://changed` | `{ relPath, kind }` |
 
-Frontend → Rust commands are listed in sections 4.4, 7, 8, 9. All commands return `Result<T, AppError>` where `AppError` serializes to `{ code: string, message: string, ...extra }`. Codes: `NotFound`, `SpawnFailed`, `Io`, `OutsideRoot`, `Conflict`, `InvalidName`, `GitTimeout`, `GitNotInstalled`.
+Frontend → Rust commands are listed in sections 4.4, 7 (review commands in 7.5), 8, 9. All commands return `Result<T, AppError>` where `AppError` serializes to `{ code: string, message: string, ...extra }`. Codes: `NotFound`, `SpawnFailed`, `Io`, `OutsideRoot`, `Conflict`, `InvalidName`, `GitTimeout`, `GitNotInstalled`.
 
 Field naming: Rust structs use `#[serde(rename_all = "camelCase")]` so the frontend sees camelCase throughout. Command argument names are camelCase on the JS side and Tauri maps them to snake_case Rust parameters.
 

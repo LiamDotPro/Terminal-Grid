@@ -24,6 +24,9 @@ terminals.
   agent CLI found on your PATH, so only the ones you have installed show.
 - **Current task**: agents report what they are doing into a file and the
   pane shows it on one line under the header.
+- **Focus + review**: `<mod>+Enter` puts a pane next to its repository's
+  staged and unstaged changes. Comment on lines, edit files in place, and send
+  the comments to the pane's agent in one go.
 - **Notes**: plain `.md` files with a live preview, autosaved.
 - **Keyboard first**: everything has a hotkey, hold the modifier to see them.
 - **Themes and density**: System, Light, Dark or Black (total darkness), and a
@@ -32,17 +35,26 @@ terminals.
 
 ![The Notes tab with a markdown note open and its preview](docs/screenshots/notes.png)
 
-## What's new in 0.3.0
+## What's new in 0.4.0
 
-- **macOS and Linux builds.** Every release now ships a universal macOS `.dmg`
-  and Linux `.AppImage`, `.deb` and `.rpm` next to the Windows installers.
-- **Restored sessions start every pane.** Panes restored on launch could stay
-  blank on Windows because the shell's startup handshake was dropped before
-  the pane was on screen.
-- **PowerShell integration loads under `RemoteSigned`.** The installed script
-  no longer inherits the installer's download mark, so directory tracking and
-  finished-agent detection work out of the box.
-- Crisper maximize and restore buttons in the window bar.
+- **Focus + review.** `<mod>+Enter` collapses the grid to the focused pane and
+  a review panel for its repository: staged and unstaged files, a diff with
+  three lines of context or the whole file with an overview strip, and line
+  comments on staged files. **Request changes** sends the pending comments,
+  with an optional note, to the pane's agent. The other panes stay one click
+  away as numbered pills in the bar. See [Focus + review](#focus--review).
+- **Edit in place.** The review panel's Edit mode opens the file on disk with
+  added, modified and unsaved lines marked in the gutter; saving writes it
+  back as an unstaged change.
+- **Light and Black themes, and a compact layout** with square, borderless
+  panes. See [Appearance](docs/wiki/Appearance.md).
+- **Agent launchers.** An idle pane's header has a button for each agent CLI
+  found on your PATH.
+- **Task line and worktree menu.** A reported task shows on one line under the
+  header, and the branch opens a menu to move between worktrees.
+- **Signed and notarized macOS build**, so Gatekeeper opens it without a
+  workaround.
+- Shells left running by a webview reload are closed.
 
 ## Install
 
@@ -135,8 +147,8 @@ message becomes the top of the release notes, so keep it to a few short lines
 about what changed:
 
 ```
-git tag -a v0.3.0 -m "Terminal Grid 0.3.0" -m "- macOS and Linux builds"
-git push origin v0.3.0
+git tag -a v0.4.0 -m "Terminal Grid 0.4.0" -m "- Focus + review"
+git push origin v0.4.0
 ```
 
 [`release.yml`](.github/workflows/release.yml) then:
@@ -162,8 +174,8 @@ Store assessment are in `docs/store-publishing.md`.
 ## Test
 
 ```
-npm test                 # frontend: layout, hotkeys, OSC parsing, markdown, reducer
-cd src-tauri && cargo test   # core: worktree parser, path sandbox, agent state, coalescer
+npm test                 # frontend: layout, hotkeys, OSC parsing, markdown, diff, reducer
+cd src-tauri && cargo test   # core: worktree parser, review status, path sandbox, agent state, coalescer
 ```
 
 ## Layout
@@ -174,7 +186,7 @@ src/                     frontend (Vite + React 19 + xterm.js)
   ipc/                   the IPC contract and typed client — the boundary
   state/                 reducer, view models, the provider that talks to Rust
   terminals/             xterm instance registry, theme, OSC parsing
-  components/            chrome, pane grid, notes, settings
+  components/            chrome, pane grid, review panel, notes, settings
   styles/                design tokens and component CSS
 src-tauri/               Rust core, see docs/technical-design.md section 2
 ```
@@ -197,12 +209,43 @@ Settings (AltGr layouts make `Ctrl+Alt` awkward on some keyboards).
 | `Alt+←↑↓→` | Focus the neighbouring pane in that direction |
 | `<mod>+1…9` | Focus pane n on the current page |
 | `<mod>+[` / `<mod>+]` | Previous / next page (`PageUp` / `PageDown` also work) |
+| `<mod>+Enter` | Focus + review the focused pane, and back to the grid |
 | `<mod>+Tab` | Switch between Terminals and Notes (`<mod>+T` / `<mod>+M` also work) |
 | `<mod>+B` / `<mod>+P` | Notes: hide or show the notes list / the preview |
 | `<mod>+,` | Settings |
 | `F11` | Toggle fullscreen |
 
 Holding the modifier for a moment shows the same list as a popover.
+
+## Focus + review
+
+`<mod>+Enter` (or `<mod>+Enter` again to go back) lifts the focused pane out of
+the grid and puts a review panel for its repository next to it. The other
+panes on the page become numbered pills in the bar; a green dot means that
+pane's agent finished. Click a pill, or use `<mod>+1…9`, to review another
+pane.
+
+The panel lists `git status` as **Staged** and **Unstaged**, with buttons to
+stage or unstage a file or everything. Only staged files take comments: click
+a line number, or press `C`, write the comment and press `Ctrl+Enter`.
+Comments stay **Pending** across files until **Request changes** sends them,
+with an optional note, to the pane's agent as one message; then they are
+marked **Sent**. When the agent commits, the committed files leave the list
+and their comments go with them.
+
+| Key | In the panel |
+|---|---|
+| `↑` / `↓` | Previous / next file |
+| `N` / `Shift+N` | Next / previous change |
+| `F` | Changes only (3 lines of context) or the whole file, with an overview strip |
+| `E` | Edit the file on disk; `Ctrl+S` saves, `Esc` hands the keys back |
+| `C` | Comment on the current line |
+
+Edit mode marks added (green), modified (amber) and your unsaved (cyan) lines
+in the gutter, and removed lines as red markers. Saving writes the file to
+disk, so on a staged file the edit shows up as an unstaged change on top.
+Unsaved edits survive switching files; a file changed on disk while you edit
+asks whether to reload or keep yours.
 
 ## Stacking and opening panes from a pane
 

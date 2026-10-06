@@ -61,6 +61,35 @@ export interface NotesState {
   previewCollapsed: boolean;
 }
 
+/** A line comment in the review panel. Only staged files take comments. */
+export interface ReviewComment {
+  id: string;
+  /** Comments belong to a repository, so every pane on it sees them. */
+  repoRoot: string;
+  path: string;
+  /** Line in the staged (index) version of the file. */
+  line: number;
+  /** That line's text when the comment was written, to follow it if the file moves. */
+  lineText: string;
+  text: string;
+  /** Pending until sent to an agent; sent ones drop out of the count. */
+  status: "pending" | "sent";
+  createdAt: number;
+}
+
+export interface SentBatch {
+  repoRoot: string;
+  paneId: TerminalId;
+  count: number;
+  at: number;
+}
+
+export interface ReviewState {
+  comments: ReviewComment[];
+  /** The last batch sent, for the header's "sent to pane N" marker. */
+  sent: SentBatch | null;
+}
+
 export interface AppState {
   ready: boolean;
   config: Config;
@@ -73,6 +102,9 @@ export interface AppState {
   page: number;
   /** How the panes on a page stack: both ways, side by side, or on top of each other. */
   layoutMode: LayoutMode;
+  /** Focus + review: the focused pane next to a review panel for its repository. */
+  focusMode: boolean;
+  review: ReviewState;
   notes: NotesState;
   settingsOpen: boolean;
   hotkeysOpen: boolean;
@@ -92,6 +124,8 @@ export const initialState: AppState = {
   focusedId: null,
   page: 0,
   layoutMode: "grid",
+  focusMode: false,
+  review: { comments: [], sent: null },
   notes: {
     root: null,
     tree: [],
@@ -145,6 +179,16 @@ export type Action =
   | { type: "terminal/focus-index"; index: number }
   | { type: "terminal/move"; dir: Direction }
   | { type: "terminal/move-focus"; dir: Direction }
+  | { type: "review/toggle" }
+  /** Focus mode on `id`: from a pill in the bar, or Ctrl+Alt+Enter. */
+  | { type: "review/open"; id: TerminalId }
+  | { type: "review/close" }
+  | { type: "review/comment-add"; comment: ReviewComment }
+  | { type: "review/comment-edit"; id: string; text: string }
+  | { type: "review/comment-delete"; id: string }
+  | { type: "review/sent"; ids: string[]; repoRoot: string; paneId: TerminalId; at: number }
+  /** Drops the comments on files that were committed and so left the review. */
+  | { type: "review/forget"; repoRoot: string; paths: string[] }
   | { type: "notes/root"; root: string }
   | { type: "notes/collapse"; panel: "tree" | "preview"; collapsed: boolean }
   | { type: "notes/toggle-panel"; panel: "tree" | "preview" }
@@ -263,7 +307,14 @@ export function reducer(state: AppState, action: Action): AppState {
         state.focusedId === action.id
           ? (order[Math.min(index, order.length - 1)] ?? null)
           : state.focusedId;
-      return { ...state, order, terminals, focusedId, page: clampPage(state.page, order.length) };
+      return {
+        ...state,
+        order,
+        terminals,
+        focusedId,
+        page: clampPage(state.page, order.length),
+        focusMode: state.focusMode && focusedId !== null,
+      };
     }
 
     case "terminal/restarted": {
@@ -376,6 +427,57 @@ export function reducer(state: AppState, action: Action): AppState {
     case "terminal/move-focus": {
       const id = neighbourId(state, action.dir);
       return id ? reducer(state, { type: "terminal/focus", id }) : state;
+    }
+
+    case "review/toggle":
+      if (state.focusMode) return { ...state, focusMode: false };
+      if (!state.focusedId || !state.terminals[state.focusedId]) return state;
+      return { ...state, focusMode: true, activeTab: "terminals", hotkeysOpen: false };
+
+    case "review/open": {
+      const focused = reducer(state, { type: "terminal/focus", id: action.id });
+      if (focused.focusedId !== action.id) return state;
+      return { ...focused, focusMode: true, activeTab: "terminals", hotkeysOpen: false };
+    }
+
+    case "review/close":
+      return state.focusMode ? { ...state, focusMode: false } : state;
+
+    case "review/comment-add":
+      return { ...state, review: { ...state.review, comments: [...state.review.comments, action.comment] } };
+
+    case "review/comment-edit":
+      return patchComments(state, (comments) =>
+        comments.map((comment) =>
+          comment.id === action.id
+            ? // Rewording a sent comment makes it something to send again.
+              { ...comment, text: action.text, status: "pending" }
+            : comment,
+        ),
+      );
+
+    case "review/comment-delete":
+      return patchComments(state, (comments) => comments.filter((comment) => comment.id !== action.id));
+
+    case "review/sent": {
+      const ids = new Set(action.ids);
+      const comments = state.review.comments.map((comment) =>
+        ids.has(comment.id) ? { ...comment, status: "sent" as const } : comment,
+      );
+      return {
+        ...state,
+        review: {
+          comments,
+          sent: { repoRoot: action.repoRoot, paneId: action.paneId, count: ids.size, at: action.at },
+        },
+      };
+    }
+
+    case "review/forget": {
+      const paths = new Set(action.paths);
+      return patchComments(state, (comments) =>
+        comments.filter((comment) => comment.repoRoot !== action.repoRoot || !paths.has(comment.path)),
+      );
     }
 
     case "notes/root":
@@ -513,6 +615,13 @@ function patchTerminal(
   const next = patch(term);
   if (next === term) return state;
   return { ...state, terminals: { ...state.terminals, [id]: next } };
+}
+
+function patchComments(
+  state: AppState,
+  patch: (comments: ReviewComment[]) => ReviewComment[],
+): AppState {
+  return { ...state, review: { ...state.review, comments: patch(state.review.comments) } };
 }
 
 function clampPage(page: number, total: number): number {

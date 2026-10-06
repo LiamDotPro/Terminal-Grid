@@ -24,7 +24,8 @@ export type HotkeyAction =
   | { type: "open-settings" }
   | { type: "cycle-layout" }
   | { type: "notes-toggle"; panel: "tree" | "preview" }
-  | { type: "toggle-fullscreen" };
+  | { type: "toggle-fullscreen" }
+  | { type: "toggle-review" };
 
 const ARROWS: Record<string, Direction> = {
   ArrowUp: "up",
@@ -114,6 +115,9 @@ export function matchHotkey(event: HotkeyEventLike, modifier: HotkeyModifier): H
       return { type: "notes-toggle", panel: "preview" };
     case "Comma":
       return { type: "open-settings" };
+    case "Enter":
+    case "NumpadEnter":
+      return { type: "toggle-review" };
     default:
       return null;
   }
@@ -137,6 +141,7 @@ export function hotkeyHints(modifier: HotkeyModifier): HotkeyHint[] {
     { label: "Focus pane in a direction", key: "Alt+←↑↓→" },
     { label: "Focus pane 1–9", key: `${mod}+1…9` },
     { label: "Previous / next page", key: `${mod}+[ ]` },
+    { label: "Focus + review", key: `${mod}+Enter` },
     { label: "Notes / Terminals", key: `${mod}+Tab` },
     { label: "Notes: hide / show list, preview", key: `${mod}+B / P` },
     { label: "Settings", key: `${mod}+,` },
