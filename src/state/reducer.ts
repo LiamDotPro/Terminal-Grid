@@ -180,7 +180,7 @@ export type Action =
   | { type: "terminal/move"; dir: Direction }
   | { type: "terminal/move-focus"; dir: Direction }
   | { type: "review/toggle" }
-  /** Focus mode on `id`: from a pill in the bar, or Ctrl+Alt+Enter. */
+  /** Focus mode on `id`: from a pill in the bar, or the focus + review hotkey. */
   | { type: "review/open"; id: TerminalId }
   | { type: "review/close" }
   | { type: "review/comment-add"; comment: ReviewComment }

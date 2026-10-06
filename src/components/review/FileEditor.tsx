@@ -12,6 +12,8 @@ import { isAppError, errorMessage } from "../../lib/appError";
 import { indentOf } from "../../lib/review";
 import type { CommentStyle } from "../../lib/syntax";
 import { cx } from "../../lib/cx";
+import { shortcutLabel } from "../../lib/hotkeys";
+import { useHotkeyScheme } from "../../state/AppProvider";
 import { CodeText, OverviewRuler, viewportOf } from "./code";
 
 /**
@@ -73,6 +75,7 @@ export function FileEditor({
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [viewport, setViewport] = useState({ top: 0, height: 1 });
+  const scheme = useHotkeyScheme();
   const input = useRef<HTMLTextAreaElement>(null);
   const highlight = useRef<HTMLDivElement>(null);
   const gutter = useRef<HTMLDivElement>(null);
@@ -223,7 +226,7 @@ export function FileEditor({
             disabled={!dirty || saving}
             onClick={() => void write(false)}
           >
-            Save<span className="review-btn__key">Ctrl+S</span>
+            Save<span className="review-btn__key">{shortcutLabel(scheme, "save")}</span>
           </button>
         </div>
       )}

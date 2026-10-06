@@ -72,7 +72,7 @@ export interface WorktreeChip {
 
 export interface PaneView {
   id: TerminalId;
-  /** 1-based position on the current page; drives the badge and Ctrl+Alt+1..9. */
+  /** 1-based position on the current page; drives the badge and the focus-pane hotkeys (Ctrl+Alt+1…9, ⌘1…9). */
   n: number;
   title: string;
   cwd: string;

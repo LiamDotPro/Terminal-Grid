@@ -4,10 +4,10 @@ import type { ChangedFile, ChangeStatus, FileVersions, ReviewStatus, TerminalId 
 import { errorMessage } from "../../lib/appError";
 import { cx } from "../../lib/cx";
 import { diffLines, splitLines } from "../../lib/diff";
-import { modifierLabel } from "../../lib/hotkeys";
+import { shortcutLabel } from "../../lib/hotkeys";
 import { clockTime, indentOf, languageOf, lineEndingOf, splitPath } from "../../lib/review";
 import { commentStyle } from "../../lib/syntax";
-import { useAppActions, useAppState } from "../../state/AppProvider";
+import { useAppActions, useAppState, useHotkeyScheme } from "../../state/AppProvider";
 import { DiffView, type DiffViewHandle } from "./DiffView";
 import { FileEditor, hasDraft } from "./FileEditor";
 import { RequestTray } from "./RequestTray";
@@ -67,7 +67,8 @@ export function ReviewPanel({
   const state = useAppState();
   const actions = useAppActions();
   const term = state.terminals[id];
-  const mod = modifierLabel(state.config.hotkeyModifier);
+  const scheme = useHotkeyScheme();
+  const back = shortcutLabel(scheme, "toggle-review");
 
   const root = useRef<HTMLDivElement>(null);
   const diff = useRef<DiffViewHandle>(null);
@@ -361,7 +362,7 @@ export function ReviewPanel({
         <button
           type="button"
           className="review-icon"
-          title={`Close review (${mod}+Enter)`}
+          title={`Close review (${back})`}
           aria-label="Close review"
           onClick={actions.closeReview}
         >
@@ -418,7 +419,7 @@ export function ReviewPanel({
                 ["F", "whole file"],
                 ["E", "edit"],
                 ["C", "comment"],
-                [`${mod}+Enter`, "back to grid"],
+                [back, "back to grid"],
               ].map(([key, label]) => (
                 <span key={key} className="review__hint">
                   <span className="review__key">{key}</span>

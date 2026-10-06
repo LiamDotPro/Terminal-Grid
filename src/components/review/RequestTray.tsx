@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { shortcutLabel } from "../../lib/hotkeys";
 import { splitPath } from "../../lib/review";
+import { useHotkeyScheme } from "../../state/AppProvider";
 import type { ReviewComment } from "../../state/reducer";
 
 interface RequestTrayProps {
@@ -15,6 +17,7 @@ interface RequestTrayProps {
  * optional note and one button that sends them to the focused terminal.
  */
 export function RequestTray({ comments, paneNumber, onRemove, onSend, onClose }: RequestTrayProps) {
+  const scheme = useHotkeyScheme();
   const root = useRef<HTMLDivElement>(null);
   const [note, setNote] = useState("");
   const [sending, setSending] = useState(false);
@@ -117,7 +120,7 @@ export function RequestTray({ comments, paneNumber, onRemove, onSend, onClose }:
           onClick={() => void send()}
         >
           Send to pane {paneNumber}
-          <span className="review-btn__key">Ctrl+Enter</span>
+          <span className="review-btn__key">{shortcutLabel(scheme, "submit")}</span>
         </button>
       </div>
     </div>

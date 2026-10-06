@@ -10,8 +10,8 @@ import { Terminal } from "@xterm/xterm";
 import type { IDisposable } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
-import type { Config, HotkeyModifier, TerminalId } from "../ipc/types";
-import { isModifierHeld } from "../lib/hotkeys";
+import type { Config, TerminalId } from "../ipc/types";
+import { IS_MAC, hotkeyScheme, isModifierHeld, type HotkeyScheme } from "../lib/hotkeys";
 import { clipboardIntent } from "./clipboard";
 import { parseOsc7, parseOsc133, parseOsc7777 } from "./osc";
 import { terminalTheme, type ResolvedTheme } from "./theme";
@@ -64,7 +64,7 @@ export class TerminalRegistry {
   private readonly early = new Map<TerminalId, Uint8Array[]>();
   private readonly disposed = new Set<TerminalId>();
   private callbacks: RegistryCallbacks = NOOP_CALLBACKS;
-  private modifier: HotkeyModifier = "ctrl+alt";
+  private scheme: HotkeyScheme = hotkeyScheme("ctrl+alt");
   private theme: ResolvedTheme = "dark";
   private options: Pick<Config, "fontFamily" | "fontSize" | "scrollback"> = {
     fontFamily: null,
@@ -75,7 +75,7 @@ export class TerminalRegistry {
   /** Wires the registry to the app. Safe to call on every config change. */
   configure(callbacks: RegistryCallbacks, config: Config): void {
     this.callbacks = callbacks;
-    this.modifier = config.hotkeyModifier;
+    this.scheme = hotkeyScheme(config.hotkeyModifier);
     this.options = {
       fontFamily: config.fontFamily,
       fontSize: config.fontSize,
@@ -129,8 +129,8 @@ export class TerminalRegistry {
     // xterm must never swallow the app chord (design section 6), and the
     // system clipboard keys go to the browser so paste and copy just work.
     term.attachCustomKeyEventHandler((event) => {
-      if (isModifierHeld(event, this.modifier)) return false;
-      const intent = clipboardIntent(event, term.hasSelection());
+      if (isModifierHeld(event, this.scheme)) return false;
+      const intent = clipboardIntent(event, term.hasSelection(), IS_MAC);
       if (!intent) return true;
       if (intent.kind === "copy" && event.type === "keydown") {
         // The browser copies on this key; drop the selection afterwards so the

@@ -1,10 +1,10 @@
 import { useEffect, useRef } from "react";
 import { hotkeyHints, modifierLabel } from "../lib/hotkeys";
-import { useAppActions, useAppState } from "../state/AppProvider";
+import { useAppActions, useHotkeyScheme } from "../state/AppProvider";
 
 /** The hotkey cheat sheet from screen 1d. Dismisses on Escape or a click outside. */
 export function HotkeyPopover() {
-  const { config } = useAppState();
+  const scheme = useHotkeyScheme();
   const actions = useAppActions();
   const root = useRef<HTMLDivElement>(null);
 
@@ -31,9 +31,9 @@ export function HotkeyPopover() {
     <div className="hotkeys" ref={root} role="dialog" aria-label="Hotkeys">
       <div className="hotkeys__head">
         <span className="hotkeys__title">Hotkeys</span>
-        <span className="hotkeys__mod">{modifierLabel(config.hotkeyModifier)}</span>
+        <span className="hotkeys__mod">{modifierLabel(scheme)}</span>
       </div>
-      {hotkeyHints(config.hotkeyModifier).map((hint) => (
+      {hotkeyHints(scheme).map((hint) => (
         <div className="hotkeys__row" key={hint.label}>
           <span className="hotkeys__label">{hint.label}</span>
           <span className="kbd">{hint.key}</span>

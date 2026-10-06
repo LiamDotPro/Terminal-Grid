@@ -1,8 +1,9 @@
-import { modifierLabel } from "../lib/hotkeys";
-import { useAppActions, useAppState } from "../state/AppProvider";
+import { shortcutLabel } from "../lib/hotkeys";
+import { useAppActions, useAppState, useHotkeyScheme } from "../state/AppProvider";
 
 export function EmptyState() {
-  const { config, busy } = useAppState();
+  const { busy } = useAppState();
+  const scheme = useHotkeyScheme();
   const actions = useAppActions();
 
   return (
@@ -24,7 +25,7 @@ export function EmptyState() {
         >
           Open folder…
         </button>
-        <div className="empty__hint">{modifierLabel(config.hotkeyModifier)}+N</div>
+        <div className="empty__hint">{shortcutLabel(scheme, "new-pane")}</div>
       </div>
     </div>
   );

@@ -34,4 +34,10 @@ describe("clipboardIntent", () => {
     expect(clipboardIntent(key("Insert"), false)).toBeNull();
     expect(clipboardIntent(key("KeyA", { ctrlKey: true }), true)).toBeNull();
   });
+
+  it("leaves every Ctrl key to the shell on macOS", () => {
+    expect(clipboardIntent(key("KeyV", { ctrlKey: true }), false, true)).toBeNull();
+    expect(clipboardIntent(key("KeyC", { ctrlKey: true }), true, true)).toBeNull();
+    expect(clipboardIntent(key("Insert", { shiftKey: true }), false, true)).toBeNull();
+  });
 });

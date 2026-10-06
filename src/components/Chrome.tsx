@@ -1,8 +1,8 @@
 import { LAYOUT_MODES, pageSlice, type LayoutMode } from "../ipc/layout";
 import { cx } from "../lib/cx";
-import { modifierLabel } from "../lib/hotkeys";
+import { focusPaneLabel, shortcutLabel } from "../lib/hotkeys";
 import type { WindowFrame } from "../lib/windowFrame";
-import { useAppActions, useAppState } from "../state/AppProvider";
+import { useAppActions, useAppState, useHotkeyScheme } from "../state/AppProvider";
 import { totalPages } from "../state/reducer";
 
 const LAYOUT_LABELS: Record<LayoutMode, string> = {
@@ -111,6 +111,7 @@ function MaximizeGlyph({ restore = false }: { restore?: boolean }) {
 export function Chrome({ frame }: { frame: WindowFrame }) {
   const state = useAppState();
   const actions = useAppActions();
+  const scheme = useHotkeyScheme();
   const pages = totalPages(state);
   const isTerminals = state.activeTab === "terminals";
   const inFocus = isTerminals && state.focusMode;
@@ -182,7 +183,7 @@ export function Chrome({ frame }: { frame: WindowFrame }) {
             className="layout-switch"
             role="radiogroup"
             aria-label="Pane stacking"
-            title={`Pane stacking (${modifierLabel(state.config.hotkeyModifier)}+L cycles)`}
+            title={`Pane stacking (${shortcutLabel(scheme, "cycle-layout")} cycles)`}
           >
             {LAYOUT_MODES.map((mode) => (
               <button
@@ -299,7 +300,7 @@ export function Chrome({ frame }: { frame: WindowFrame }) {
 function FocusPills() {
   const state = useAppState();
   const actions = useAppActions();
-  const mod = modifierLabel(state.config.hotkeyModifier);
+  const scheme = useHotkeyScheme();
   const ids = pageSlice(state.order, state.page);
 
   return (
@@ -307,7 +308,7 @@ function FocusPills() {
       <button
         type="button"
         className="chrome__back"
-        title={`Back to grid (${mod}+Enter)`}
+        title={`Back to grid (${shortcutLabel(scheme, "toggle-review")})`}
         onClick={actions.closeReview}
       >
         <span className="chrome__back-glyph" aria-hidden="true">
@@ -326,7 +327,7 @@ function FocusPills() {
               role="tab"
               aria-selected={current}
               className={cx("chrome__pill", current && "chrome__pill--current")}
-              title={`Review pane ${index + 1}${finished ? " · finished" : ""} (${mod}+${index + 1})`}
+              title={`Review pane ${index + 1}${finished ? " · finished" : ""} (${focusPaneLabel(scheme, index + 1)})`}
               onClick={() => actions.openReview(id)}
             >
               {index + 1}

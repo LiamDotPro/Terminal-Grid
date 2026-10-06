@@ -14,6 +14,8 @@ import { reanchor, relativeTime } from "../../lib/review";
 import type { CommentStyle } from "../../lib/syntax";
 import { cx } from "../../lib/cx";
 import type { ReviewComment } from "../../state/reducer";
+import { shortcutLabel } from "../../lib/hotkeys";
+import { useHotkeyScheme } from "../../state/AppProvider";
 import { CodeText, OverviewRuler, viewportOf } from "./code";
 
 export interface DiffViewHandle {
@@ -328,6 +330,7 @@ function Composer({
   onCancel: () => void;
   onSubmit: () => void;
 }) {
+  const scheme = useHotkeyScheme();
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     event.stopPropagation();
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
@@ -352,7 +355,7 @@ function Composer({
       <div className="composer__foot">
         <span className="composer__where">line {line}</span>
         <span className="spacer" />
-        <span className="composer__hint">Ctrl+Enter</span>
+        <span className="composer__hint">{shortcutLabel(scheme, "submit")}</span>
         <button type="button" className="review-btn" onClick={onCancel}>
           Cancel
         </button>

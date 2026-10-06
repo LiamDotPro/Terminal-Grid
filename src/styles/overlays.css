@@ -157,6 +157,13 @@
   padding-top: 7px;
 }
 
+.row__note {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-70);
+  padding: 10px 0;
+}
+
 .row__hint {
   font-size: 11px;
   color: var(--text-50);

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import type { Config, HotkeyModifier, ThemePreference } from "../ipc/types";
 import { cx } from "../lib/cx";
+import { IS_MAC } from "../lib/hotkeys";
 import { useAppActions, useAppState } from "../state/AppProvider";
 
 const SHELLS = [
@@ -185,28 +186,37 @@ export function SettingsDialog() {
             </div>
           </div>
 
-          <div className="row">
-            <div className="row__label" id="settings-modifier">
-              Hotkey modifier
+          {IS_MAC ? (
+            <div className="row">
+              <div className="row__label">Hotkeys</div>
+              <div className="row__note">
+                Command (⌘), the macOS layout: ⌘N, ⌘W, ⌘1…9 and so on. Hold ⌘ to see them all.
+              </div>
             </div>
-            <div className="segmented" role="radiogroup" aria-labelledby="settings-modifier">
-              {(["ctrl+alt", "ctrl+shift"] as HotkeyModifier[]).map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  role="radio"
-                  aria-checked={draft.hotkeyModifier === value}
-                  className={cx(
-                    "segmented__item",
-                    draft.hotkeyModifier === value && "segmented__item--active",
-                  )}
-                  onClick={() => patch("hotkeyModifier", value)}
-                >
-                  {value === "ctrl+alt" ? "Ctrl+Alt" : "Ctrl+Shift"}
-                </button>
-              ))}
+          ) : (
+            <div className="row">
+              <div className="row__label" id="settings-modifier">
+                Hotkey modifier
+              </div>
+              <div className="segmented" role="radiogroup" aria-labelledby="settings-modifier">
+                {(["ctrl+alt", "ctrl+shift"] as HotkeyModifier[]).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    role="radio"
+                    aria-checked={draft.hotkeyModifier === value}
+                    className={cx(
+                      "segmented__item",
+                      draft.hotkeyModifier === value && "segmented__item--active",
+                    )}
+                    onClick={() => patch("hotkeyModifier", value)}
+                  >
+                    {value === "ctrl+alt" ? "Ctrl+Alt" : "Ctrl+Shift"}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="row">
             <div className="row__label" id="settings-theme">

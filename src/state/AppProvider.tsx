@@ -36,6 +36,7 @@ import type {
 } from "../ipc/types";
 import type { LayoutMode } from "../ipc/layout";
 import { TASK_REPORT_PROMPT } from "../lib/agentTask";
+import { hotkeyScheme, type HotkeyScheme } from "../lib/hotkeys";
 import { reviewMessage, reviewMessageOneLine } from "../lib/review";
 import { errorMessage, isAppError } from "../lib/appError";
 import { cdCommand, clearLineKey } from "../lib/shellCommand";
@@ -144,6 +145,11 @@ export function useAppActions(): AppActions {
   const actions = useContext(ActionsContext);
   if (!actions) throw new Error("useAppActions must be used inside <AppProvider>");
   return actions;
+}
+
+/** The shortcut layout in force: Command on macOS, the configured chord elsewhere. */
+export function useHotkeyScheme(): HotkeyScheme {
+  return hotkeyScheme(useAppState().config.hotkeyModifier);
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {

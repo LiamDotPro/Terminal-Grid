@@ -35,6 +35,15 @@ terminals.
 
 ![The Notes tab with a markdown note open and its preview](docs/screenshots/notes.png)
 
+## What's new in 0.4.1
+
+- **Mac hotkeys.** macOS now uses the Command key the way Mac apps do: `⌘N`,
+  `⌘T`, `⌘W`, `⌘1…9`, `⌥⌘` arrows, `⌘↩`, `⌃Tab`, `⌘,`. Option and Control are
+  left to the shell, and every shortcut in the app is written with Mac symbols.
+  See [Hotkeys](#hotkeys).
+- **`⌘W` closes a pane, not the app.** The macOS menu no longer claims it for
+  Close Window.
+
 ## What's new in 0.4.0
 
 - **Focus + review.** `<mod>+Enter` collapses the grid to the focused pane and
@@ -196,26 +205,33 @@ src-tauri/               Rust core, see docs/technical-design.md section 2
 
 ## Hotkeys
 
-The modifier is `Ctrl+Alt` by default and can be switched to `Ctrl+Shift` in
-Settings (AltGr layouts make `Ctrl+Alt` awkward on some keyboards).
+Windows and Linux chord on a modifier, `Ctrl+Alt` by default, switchable to
+`Ctrl+Shift` in Settings (AltGr layouts make `Ctrl+Alt` awkward on some
+keyboards). macOS uses the Command key the way Mac apps do; ⌘ never reaches the
+shell, so none of these take a key from the terminal, and Option is left alone
+for moving by word.
 
-| Keys | Action |
-|---|---|
-| `<mod>+N` | New pane (folder picker), placed after the focused pane. Add `Shift` to reuse the focused pane's folder |
-| `<mod>+L` | Cycle pane stacking: grid, side by side, stacked |
-| `<mod>+W` | Close pane (confirms while an agent is running) |
-| `<mod>+R` | Restart the shell in the focused pane |
-| `<mod>+←↑↓→` | Move the focused pane. Add `Shift` to move focus instead |
-| `Alt+←↑↓→` | Focus the neighbouring pane in that direction |
-| `<mod>+1…9` | Focus pane n on the current page |
-| `<mod>+[` / `<mod>+]` | Previous / next page (`PageUp` / `PageDown` also work) |
-| `<mod>+Enter` | Focus + review the focused pane, and back to the grid |
-| `<mod>+Tab` | Switch between Terminals and Notes (`<mod>+T` / `<mod>+M` also work) |
-| `<mod>+B` / `<mod>+P` | Notes: hide or show the notes list / the preview |
-| `<mod>+,` | Settings |
-| `F11` | Toggle fullscreen |
+| Windows / Linux | macOS | Action |
+|---|---|---|
+| `<mod>+N` | `⌘N` | New pane (folder picker), placed after the focused pane |
+| `<mod>+Shift+N` | `⌘T` | New pane in the focused pane's folder |
+| `<mod>+L` | `⌘L` | Cycle pane stacking: grid, side by side, stacked |
+| `<mod>+W` | `⌘W` | Close pane (confirms while an agent is running) |
+| `<mod>+R` | `⌘R` | Restart the shell in the focused pane |
+| `<mod>+←↑↓→` | `⌃⌘←↑↓→` | Move the focused pane |
+| `Alt+←↑↓→` or `<mod>+Shift+←↑↓→` | `⌥⌘←↑↓→` | Focus the neighbouring pane in that direction |
+| `<mod>+1…9` | `⌘1…9` | Focus pane n on the current page |
+| `<mod>+[` / `<mod>+]` | `⇧⌘[` / `⇧⌘]` | Previous / next page (`PageUp` / `PageDown`, and `⌘[` / `⌘]`, also work) |
+| `<mod>+Enter` | `⌘↩` | Focus + review the focused pane, and back to the grid |
+| `<mod>+Tab` | `⌃Tab` | Switch between Terminals and Notes (`<mod>+T` / `<mod>+M` also work) |
+| `<mod>+B` / `<mod>+P` | `⌘B` / `⌘P` | Notes: hide or show the notes list / the preview |
+| `<mod>+,` | `⌘,` | Settings |
+| `F11` | `⌃⌘F` | Toggle full screen |
 
-Holding the modifier for a moment shows the same list as a popover.
+With `Ctrl+Shift` as the modifier, `Alt` takes the place of `Shift` above.
+Holding the modifier (`⌘` on a Mac) for a moment shows the same list as a
+popover. On macOS the clipboard is `⌘C` / `⌘V` and every `Ctrl` key goes to the
+shell; elsewhere `Ctrl+C` copies while text is selected and `Ctrl+V` pastes.
 
 ## Focus + review
 
@@ -227,7 +243,7 @@ pane.
 
 The panel lists `git status` as **Staged** and **Unstaged**, with buttons to
 stage or unstage a file or everything. Only staged files take comments: click
-a line number, or press `C`, write the comment and press `Ctrl+Enter`.
+a line number, or press `C`, write the comment and press `Ctrl+Enter` (`⌘↩`).
 Comments stay **Pending** across files until **Request changes** sends them,
 with an optional note, to the pane's agent as one message; then they are
 marked **Sent**. When the agent commits, the committed files leave the list
@@ -238,7 +254,7 @@ and their comments go with them.
 | `↑` / `↓` | Previous / next file |
 | `N` / `Shift+N` | Next / previous change |
 | `F` | Changes only (3 lines of context) or the whole file, with an overview strip |
-| `E` | Edit the file on disk; `Ctrl+S` saves, `Esc` hands the keys back |
+| `E` | Edit the file on disk; `Ctrl+S` (`⌘S`) saves, `Esc` hands the keys back |
 | `C` | Comment on the current line |
 
 Edit mode marks added (green), modified (amber) and your unsaved (cyan) lines

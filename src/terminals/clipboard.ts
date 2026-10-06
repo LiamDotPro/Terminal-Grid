@@ -29,9 +29,17 @@ export type ClipboardIntent =
 /**
  * Ctrl+V, Shift+Insert paste. Ctrl+C with a selection and Ctrl+Insert copy.
  * Ctrl+C without a selection still reaches the shell as an interrupt.
+ *
+ * On macOS the clipboard is ⌘C / ⌘V, which the app's Edit menu turns into the
+ * same copy and paste events, so every Ctrl key stays the shell's: Ctrl+C is
+ * always an interrupt and Ctrl+V the literal-next key, as in Terminal.
  */
-export function clipboardIntent(event: ClipboardKeyEvent, hasSelection: boolean): ClipboardIntent {
-  if (event.metaKey || event.altKey) return null;
+export function clipboardIntent(
+  event: ClipboardKeyEvent,
+  hasSelection: boolean,
+  mac = false,
+): ClipboardIntent {
+  if (mac || event.metaKey || event.altKey) return null;
 
   if (event.code === "Insert") {
     if (event.ctrlKey && !event.shiftKey) return { kind: "copy" };

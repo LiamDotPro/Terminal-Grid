@@ -7,7 +7,7 @@ import { PaneGrid } from "./components/PaneGrid";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { useAppearance } from "./lib/appearance";
 import { cx } from "./lib/cx";
-import { isModifierHeld, matchHotkey } from "./lib/hotkeys";
+import { hotkeyScheme, isModifierHeld, matchHotkey } from "./lib/hotkeys";
 import { useWindowFrame } from "./lib/windowFrame";
 import { AppProvider, useAppActions, useAppState } from "./state/AppProvider";
 
@@ -21,6 +21,8 @@ const MODIFIER_CODES = new Set([
   "AltRight",
   "ShiftLeft",
   "ShiftRight",
+  "MetaLeft",
+  "MetaRight",
 ]);
 
 export default function App() {
@@ -87,8 +89,13 @@ function useGlobalHotkeys(): void {
       // The settings sheet owns the keyboard while it is open.
       if (state.settingsOpen) return;
 
-      const action = matchHotkey(event, state.config.hotkeyModifier);
+      const scheme = hotkeyScheme(state.config.hotkeyModifier);
+      const action = matchHotkey(event, scheme);
       if (!action) return;
+      // On macOS ⌘↩ also submits a comment or the review tray; inside one of
+      // our text boxes it belongs to the box. The terminal's own hidden input
+      // is not one of those.
+      if (action.type === "toggle-review" && scheme === "mac" && isTextField(event.target)) return;
       event.preventDefault();
       event.stopPropagation();
 
@@ -162,7 +169,8 @@ function useModifierHint(): void {
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!MODIFIER_CODES.has(event.code) || !isModifierHeld(event, state.config.hotkeyModifier)) {
+      const scheme = hotkeyScheme(state.config.hotkeyModifier);
+      if (!MODIFIER_CODES.has(event.code) || !isModifierHeld(event, scheme)) {
         clear();
         return;
       }
@@ -193,4 +201,9 @@ function useModifierHint(): void {
       window.removeEventListener("blur", clear);
     };
   }, [actions, state.config.hotkeyModifier, state.hotkeysOpen]);
+}
+
+function isTextField(target: EventTarget | null): boolean {
+  const element = target as HTMLElement | null;
+  return Boolean(element?.closest?.("textarea, input") && !element.closest(".xterm"));
 }

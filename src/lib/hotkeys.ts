@@ -3,9 +3,15 @@
  * advertises (Terminal Grid.dc.html, screen 1d), plus the aliases from
  * docs/technical-design.md section 6 that do not collide with them.
  *
+ * There are two layouts. Windows and Linux chord everything on a modifier
+ * pair (Ctrl+Alt, or Ctrl+Shift where AltGr gets in the way). macOS uses the
+ * Command key the way Mac apps do: ⌘N, ⌘W, ⌘1…9, ⌘, and so on. The shell
+ * never sees ⌘, so none of these take a key away from the terminal.
+ *
  * Matching is done on `KeyboardEvent.code`, never on `key`: with Ctrl+Alt held
  * Windows treats the combination as AltGr on Dutch and US-international
- * layouts, so `key` is unreliable for letters, digits and brackets.
+ * layouts, and on macOS Option turns letters into symbols, so `key` is
+ * unreliable for letters, digits and brackets.
  */
 import type { HotkeyModifier } from "../ipc/types";
 import type { Direction } from "../ipc/layout";
@@ -27,6 +33,9 @@ export type HotkeyAction =
   | { type: "toggle-fullscreen" }
   | { type: "toggle-review" };
 
+/** The configured modifier pair on Windows and Linux, or the Command layout on macOS. */
+export type HotkeyScheme = HotkeyModifier | "mac";
+
 const ARROWS: Record<string, Direction> = {
   ArrowUp: "up",
   ArrowDown: "down",
@@ -43,27 +52,46 @@ export interface HotkeyEventLike {
   repeat?: boolean;
 }
 
-/** Human readable form of the modifier, used in the popover and the empty state. */
-export function modifierLabel(modifier: HotkeyModifier): string {
-  return modifier === "ctrl+shift" ? "Ctrl+Shift" : "Ctrl+Alt";
+/** True in the macOS build (WKWebView reports a Mac platform). */
+export const IS_MAC: boolean =
+  typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+
+/**
+ * The layout in force: macOS always uses Command, elsewhere the modifier from
+ * Settings applies.
+ */
+export function hotkeyScheme(modifier: HotkeyModifier, mac: boolean = IS_MAC): HotkeyScheme {
+  return mac ? "mac" : modifier;
+}
+
+/** Human readable form of the chord modifier, as the popover's header shows it. */
+export function modifierLabel(scheme: HotkeyScheme): string {
+  if (scheme === "mac") return "⌘";
+  return scheme === "ctrl+shift" ? "Ctrl+Shift" : "Ctrl+Alt";
 }
 
 /**
  * True while the chord modifier itself is held down. The chrome uses this to
  * reveal the hotkey popover without a click.
  */
-export function isModifierHeld(event: HotkeyEventLike, modifier: HotkeyModifier): boolean {
-  return modifier === "ctrl+shift"
+export function isModifierHeld(event: HotkeyEventLike, scheme: HotkeyScheme): boolean {
+  if (scheme === "mac") return event.metaKey && !event.ctrlKey && !event.altKey;
+  return scheme === "ctrl+shift"
     ? event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey
     : event.ctrlKey && event.altKey && !event.metaKey;
 }
 
+/** Resolves a key event to an action, or null when it is not one of ours. */
+export function matchHotkey(event: HotkeyEventLike, scheme: HotkeyScheme): HotkeyAction | null {
+  return scheme === "mac" ? matchMac(event) : matchChord(event, scheme);
+}
+
 /**
- * Resolves a key event to an action, or null when it is not one of ours.
- * The "secondary" modifier (Shift for Ctrl+Alt, Alt for Ctrl+Shift) turns a
- * pane move into a focus move and a new pane into a new pane in the same cwd.
+ * Windows and Linux. The "secondary" modifier (Shift for Ctrl+Alt, Alt for
+ * Ctrl+Shift) turns a pane move into a focus move and a new pane into a new
+ * pane in the same cwd.
  */
-export function matchHotkey(event: HotkeyEventLike, modifier: HotkeyModifier): HotkeyAction | null {
+function matchChord(event: HotkeyEventLike, modifier: HotkeyModifier): HotkeyAction | null {
   if (event.code === "F11" && !event.ctrlKey && !event.altKey && !event.metaKey) {
     return { type: "toggle-fullscreen" };
   }
@@ -78,8 +106,6 @@ export function matchHotkey(event: HotkeyEventLike, modifier: HotkeyModifier): H
   if (!event.ctrlKey || event.metaKey) return null;
   if (modifier === "ctrl+shift" ? !event.shiftKey : !event.altKey) return null;
 
-  // The other of the two modifiers qualifies the chord: focus move instead of
-  // pane move, new pane in the same cwd instead of a folder picker.
   const secondary = modifier === "ctrl+shift" ? event.altKey : event.shiftKey;
 
   const arrow = ARROWS[event.code];
@@ -123,27 +149,167 @@ export function matchHotkey(event: HotkeyEventLike, modifier: HotkeyModifier): H
   }
 }
 
+/**
+ * macOS, after the conventions of Terminal, iTerm and Safari: ⌘N and ⌘T open
+ * panes, ⌘W closes one, ⌘1…9 picks one, ⌥⌘ arrows walk between them (iTerm's
+ * split navigation), ⌃Tab switches the Terminals and Notes tabs, ⌃⌘F is full
+ * screen. Option alone is left to the shell, where it moves by word.
+ */
+function matchMac(event: HotkeyEventLike): HotkeyAction | null {
+  if (event.code === "Tab" && event.ctrlKey && !event.metaKey && !event.altKey) {
+    return { type: "toggle-tab" };
+  }
+  if (!event.metaKey) return null;
+
+  const arrow = ARROWS[event.code];
+  if (arrow) {
+    if (event.shiftKey) return null;
+    if (event.altKey && !event.ctrlKey) return { type: "move-focus", dir: arrow };
+    if (event.ctrlKey && !event.altKey) return { type: "move-pane", dir: arrow };
+    return null;
+  }
+
+  if (event.ctrlKey) {
+    return event.code === "KeyF" && !event.altKey && !event.shiftKey ? { type: "toggle-fullscreen" } : null;
+  }
+  if (event.altKey) return null;
+
+  // ⇧⌘[ and ⇧⌘] are the Mac way to step through tabs; ⌘[ and ⌘] work too.
+  if (event.code === "BracketLeft") return { type: "page", delta: -1 };
+  if (event.code === "BracketRight") return { type: "page", delta: 1 };
+  if (event.shiftKey) return null;
+
+  const digit = /^Digit([1-9])$/.exec(event.code);
+  if (digit) return { type: "focus-index", index: Number(digit[1]) - 1 };
+
+  switch (event.code) {
+    case "KeyN":
+      return { type: "new-pane" };
+    case "KeyT":
+      return { type: "new-pane-here" };
+    case "KeyW":
+      return { type: "close-pane" };
+    case "KeyR":
+      return { type: "restart-pane" };
+    case "KeyL":
+      return { type: "cycle-layout" };
+    case "KeyB":
+      return { type: "notes-toggle", panel: "tree" };
+    case "KeyP":
+      return { type: "notes-toggle", panel: "preview" };
+    case "Comma":
+      return { type: "open-settings" };
+    case "Enter":
+    case "NumpadEnter":
+      return { type: "toggle-review" };
+    default:
+      return null;
+  }
+}
+
+// Labels -------------------------------------------------------------------------
+
+/** Every shortcut the UI names somewhere, not only the global ones. */
+export type ShortcutName =
+  | "new-pane"
+  | "new-pane-here"
+  | "cycle-layout"
+  | "close-pane"
+  | "restart-pane"
+  | "move-pane"
+  | "move-focus"
+  | "focus-index"
+  | "page"
+  | "toggle-review"
+  | "toggle-tab"
+  | "notes-tree"
+  | "notes-preview"
+  | "notes-panels"
+  | "settings"
+  | "fullscreen"
+  /** Submitting a comment or the review tray. */
+  | "submit"
+  /** Saving in the review editor. */
+  | "save";
+
+const MAC_LABELS: Record<ShortcutName, string> = {
+  "new-pane": "⌘N",
+  "new-pane-here": "⌘T",
+  "cycle-layout": "⌘L",
+  "close-pane": "⌘W",
+  "restart-pane": "⌘R",
+  "move-pane": "⌃⌘←↑↓→",
+  "move-focus": "⌥⌘←↑↓→",
+  "focus-index": "⌘1…9",
+  page: "⇧⌘[ ]",
+  "toggle-review": "⌘↩",
+  "toggle-tab": "⌃Tab",
+  "notes-tree": "⌘B",
+  "notes-preview": "⌘P",
+  "notes-panels": "⌘B / ⌘P",
+  settings: "⌘,",
+  fullscreen: "⌃⌘F",
+  submit: "⌘↩",
+  save: "⌘S",
+};
+
+function chordLabels(modifier: HotkeyModifier): Record<ShortcutName, string> {
+  const mod = modifierLabel(modifier);
+  const secondary = modifier === "ctrl+shift" ? "Alt" : "Shift";
+  return {
+    "new-pane": `${mod}+N`,
+    "new-pane-here": `${mod}+${secondary}+N`,
+    "cycle-layout": `${mod}+L`,
+    "close-pane": `${mod}+W`,
+    "restart-pane": `${mod}+R`,
+    "move-pane": `${mod}+←↑↓→`,
+    "move-focus": "Alt+←↑↓→",
+    "focus-index": `${mod}+1…9`,
+    page: `${mod}+[ ]`,
+    "toggle-review": `${mod}+Enter`,
+    "toggle-tab": `${mod}+Tab`,
+    "notes-tree": `${mod}+B`,
+    "notes-preview": `${mod}+P`,
+    "notes-panels": `${mod}+B / P`,
+    settings: `${mod}+,`,
+    fullscreen: "F11",
+    submit: "Ctrl+Enter",
+    save: "Ctrl+S",
+  };
+}
+
+/** How a shortcut is written in this layout: "⌘W" on macOS, "Ctrl+Alt+W" elsewhere. */
+export function shortcutLabel(scheme: HotkeyScheme, name: ShortcutName): string {
+  return scheme === "mac" ? MAC_LABELS[name] : chordLabels(scheme)[name];
+}
+
+/** The key that focuses pane `n` (1-based): "⌘3" or "Ctrl+Alt+3". */
+export function focusPaneLabel(scheme: HotkeyScheme, n: number): string {
+  return scheme === "mac" ? `⌘${n}` : `${modifierLabel(scheme)}+${n}`;
+}
+
 export interface HotkeyHint {
   label: string;
   key: string;
 }
 
 /** The list rendered by the hotkey popover, in the design's order. */
-export function hotkeyHints(modifier: HotkeyModifier): HotkeyHint[] {
-  const mod = modifierLabel(modifier);
+export function hotkeyHints(scheme: HotkeyScheme): HotkeyHint[] {
+  const key = (name: ShortcutName) => shortcutLabel(scheme, name);
   return [
-    { label: "New pane", key: `${mod}+N` },
-    { label: "New pane in same folder", key: `${mod}+Shift+N` },
-    { label: "Stack: grid / side by side / stacked", key: `${mod}+L` },
-    { label: "Close pane", key: `${mod}+W` },
-    { label: "Restart shell", key: `${mod}+R` },
-    { label: "Move pane", key: `${mod}+←↑↓→` },
-    { label: "Focus pane in a direction", key: "Alt+←↑↓→" },
-    { label: "Focus pane 1–9", key: `${mod}+1…9` },
-    { label: "Previous / next page", key: `${mod}+[ ]` },
-    { label: "Focus + review", key: `${mod}+Enter` },
-    { label: "Notes / Terminals", key: `${mod}+Tab` },
-    { label: "Notes: hide / show list, preview", key: `${mod}+B / P` },
-    { label: "Settings", key: `${mod}+,` },
+    { label: "New pane", key: key("new-pane") },
+    { label: "New pane in same folder", key: key("new-pane-here") },
+    { label: "Stack: grid / side by side / stacked", key: key("cycle-layout") },
+    { label: "Close pane", key: key("close-pane") },
+    { label: "Restart shell", key: key("restart-pane") },
+    { label: "Move pane", key: key("move-pane") },
+    { label: "Focus pane in a direction", key: key("move-focus") },
+    { label: "Focus pane 1–9", key: key("focus-index") },
+    { label: "Previous / next page", key: key("page") },
+    { label: "Focus + review", key: key("toggle-review") },
+    { label: "Notes / Terminals", key: key("toggle-tab") },
+    { label: "Notes: hide / show list, preview", key: key("notes-panels") },
+    { label: "Settings", key: key("settings") },
+    { label: "Full screen", key: key("fullscreen") },
   ];
 }

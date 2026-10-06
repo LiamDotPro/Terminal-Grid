@@ -3,6 +3,8 @@
 pub mod agent;
 pub mod error;
 pub mod git;
+#[cfg(target_os = "macos")]
+mod menu;
 pub mod notes;
 pub mod pty;
 pub mod state;
@@ -42,7 +44,12 @@ pub struct AppState {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // Windows and Linux keep a bare window; only macOS has an app menu bar.
+    #[cfg(target_os = "macos")]
+    let builder = builder.menu(menu::app_menu);
+
+    builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {

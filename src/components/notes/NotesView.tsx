@@ -1,6 +1,6 @@
 import { cx } from "../../lib/cx";
-import { modifierLabel } from "../../lib/hotkeys";
-import { useAppActions, useAppState } from "../../state/AppProvider";
+import { shortcutLabel } from "../../lib/hotkeys";
+import { useAppActions, useAppState, useHotkeyScheme } from "../../state/AppProvider";
 import { NoteEditor } from "./NoteEditor";
 import { NotePreview } from "./NotePreview";
 import { NoteTree } from "./NoteTree";
@@ -11,9 +11,9 @@ import { NoteTree } from "./NoteTree";
  * middle always stays and takes whatever width is freed.
  */
 export function NotesView() {
-  const { notes, config } = useAppState();
+  const { notes } = useAppState();
   const actions = useAppActions();
-  const mod = modifierLabel(config.hotkeyModifier);
+  const scheme = useHotkeyScheme();
 
   return (
     <div
@@ -27,7 +27,7 @@ export function NotesView() {
         <PanelRail
           side="left"
           label="Notes"
-          hint={`${mod}+B`}
+          hint={shortcutLabel(scheme, "notes-tree")}
           onExpand={() => actions.collapseNotesPanel("tree", false)}
         />
       ) : (
@@ -40,7 +40,7 @@ export function NotesView() {
         <PanelRail
           side="right"
           label="Preview"
-          hint={`${mod}+P`}
+          hint={shortcutLabel(scheme, "notes-preview")}
           onExpand={() => actions.collapseNotesPanel("preview", false)}
         />
       ) : (
