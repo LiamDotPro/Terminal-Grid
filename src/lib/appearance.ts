@@ -26,18 +26,22 @@ function useSystemPrefersLight(): boolean {
 /**
  * Puts the theme and layout on <html> (data-theme, data-layout), where the
  * tokens in styles/tokens.css pick them up, and repaints the terminals. While
- * the preference is "system" it follows the OS as it changes.
+ * the preference is "system" it follows the OS as it changes. An inactive
+ * caller leaves <html> alone, so another one (the settings preview) can drive
+ * it; going active again reapplies its own values.
  */
-export function useAppearance(preference: ThemePreference, compact: boolean): void {
+export function useAppearance(preference: ThemePreference, compact: boolean, active = true): void {
   const systemPrefersLight = useSystemPrefersLight();
   const theme = resolveTheme(preference, systemPrefersLight);
 
   useEffect(() => {
+    if (!active) return;
     document.documentElement.dataset.theme = theme;
     terminalRegistry.setTheme(theme);
-  }, [theme]);
+  }, [theme, active]);
 
   useEffect(() => {
+    if (!active) return;
     document.documentElement.dataset.layout = compact ? "compact" : "comfortable";
-  }, [compact]);
+  }, [compact, active]);
 }

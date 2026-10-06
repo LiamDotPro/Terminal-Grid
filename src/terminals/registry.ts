@@ -115,7 +115,11 @@ export class TerminalRegistry {
       lineHeight: 1.2,
       letterSpacing: 0,
       macOptionIsMeta: false,
-      minimumContrastRatio: 1,
+      // The palette is pastel, made for text on dark glass. When a program
+      // paints one of those colours as a background (Claude Code's selection,
+      // its message bar, inverse video) and writes white on it, xterm darkens
+      // the text until it reads, as VS Code's terminal does.
+      minimumContrastRatio: 4.5,
       scrollback: this.options.scrollback,
       theme: terminalTheme(this.theme),
       windowsPty: { backend: "conpty" },

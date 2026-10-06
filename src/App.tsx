@@ -38,7 +38,9 @@ function Shell() {
   const actions = useAppActions();
   useGlobalHotkeys();
   useModifierHint();
-  useAppearance(state.config.theme, state.config.compactLayout);
+  // Settings previews its draft appearance while open; closing it (Save or
+  // Cancel) hands back to the saved config.
+  useAppearance(state.config.theme, state.config.compactLayout, !state.settingsOpen);
   const frame = useWindowFrame();
 
   const isTerminals = state.activeTab === "terminals";

@@ -68,12 +68,15 @@
   backdrop-filter: var(--glass-blur);
   border: 1px solid var(--edge);
   box-shadow: var(--shadow-pane);
-  outline: none;
-  transition: border-color 160ms ease, box-shadow 160ms ease;
+  /* Same two-pixel ring as a focused pane, without changing the box. */
+  outline: 1px solid transparent;
+  outline-offset: -2px;
+  transition: border-color 160ms ease, box-shadow 160ms ease, outline-color 160ms ease;
 }
 
 .review--active {
-  border: 2px solid var(--accent);
+  border-color: var(--accent);
+  outline-color: var(--accent);
   box-shadow: var(--ring-focus);
 }
 

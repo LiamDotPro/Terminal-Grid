@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import type { Config, HotkeyModifier, ThemePreference } from "../ipc/types";
 import { cx } from "../lib/cx";
+import { useAppearance } from "../lib/appearance";
 import { IS_MAC } from "../lib/hotkeys";
 import { useAppActions, useAppState } from "../state/AppProvider";
 
@@ -37,7 +38,8 @@ type Draft = Pick<
 
 /**
  * Settings sheet from screen 1f. Edits a draft and only commits through
- * `config_set` on Save, so Cancel really is a cancel.
+ * `config_set` on Save, so Cancel really is a cancel. Theme and layout preview
+ * live from the draft; on close the app reapplies the saved config.
  */
 export function SettingsDialog() {
   const state = useAppState();
@@ -50,6 +52,7 @@ export function SettingsDialog() {
   const [initialNotesRoot] = useState(draft.notesRoot);
   const [pattern, setPattern] = useState("");
   const sheet = useRef<HTMLFormElement>(null);
+  useAppearance(draft.theme, draft.compactLayout);
 
   useEffect(() => {
     const onKeyDown = (event: globalThis.KeyboardEvent) => {

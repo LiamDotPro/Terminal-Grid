@@ -8,9 +8,13 @@ export type ResolvedTheme = "light" | "dark" | "black";
  * terminal output (TerminalPane.dc.html `C`), extended into a full ANSI set so
  * real programs still look right. The background stays transparent: the frosted
  * pane behind the terminal is what the design shows through.
+ *
+ * Its colour channels are still the glass's own colour, because xterm checks
+ * text contrast against them (minimumContrastRatio in the registry): against
+ * the real backdrop, not against black.
  */
 export const TERMINAL_THEME: ITheme = {
-  background: "rgba(0, 0, 0, 0)",
+  background: "rgba(8, 10, 18, 0)",
   foreground: "#e6e9f0",
   cursor: "#8ddcff",
   cursorAccent: "#07080d",
@@ -41,7 +45,7 @@ export const TERMINAL_THEME: ITheme = {
  * glass. "white" maps to a dark grey because programs use it for normal text.
  */
 export const TERMINAL_THEME_LIGHT: ITheme = {
-  background: "rgba(0, 0, 0, 0)",
+  background: "rgba(246, 247, 251, 0)",
   foreground: "#1f2433",
   cursor: "#0c78b2",
   cursorAccent: "#ffffff",

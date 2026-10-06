@@ -39,11 +39,17 @@
   backdrop-filter: var(--glass-blur);
   border: 1px solid var(--edge);
   box-shadow: var(--shadow-pane);
-  transition: border-color 160ms ease, box-shadow 160ms ease;
+  /* The focus ring's second pixel is an outline just inside the border, so
+     focusing a pane never changes its box: a wider border would shrink the
+     terminal and make it refit, which shows as a jump. */
+  outline: 1px solid transparent;
+  outline-offset: -2px;
+  transition: border-color 160ms ease, box-shadow 160ms ease, outline-color 160ms ease;
 }
 
 .pane--focused {
-  border: 2px solid var(--accent);
+  border-color: var(--accent);
+  outline-color: var(--accent);
   box-shadow: var(--ring-focus);
 }
 
@@ -78,11 +84,6 @@
   flex: none;
   /* Anchors the task popover just under the header. */
   position: relative;
-}
-
-/* The 2px focus border eats a pixel; keep the header the same height. */
-.pane--focused .pane__header {
-  padding: 7px 9px;
 }
 
 .pane__row {
