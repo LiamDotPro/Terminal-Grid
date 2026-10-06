@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MouseEvent, type RefObject } from "react";
 import { cx } from "../lib/cx";
-import { isClaudeAgent, type PaneView } from "../state/model";
-import { TaskOverlay } from "./TaskOverlay";
+import { isClaudeAgent, type PaneView, type WorktreeChip } from "../state/model";
+import { TaskPopover } from "./TaskPopover";
 import { XtermSurface } from "./XtermSurface";
 
 export type OpenFromHow = "same-folder" | "pick-folder";
@@ -17,6 +17,8 @@ interface TerminalPaneProps {
   onRestart: () => void;
   /** Asks the pane's agent to report what it is working on. */
   onAskForTask: () => void;
+  /** A worktree picked in the branch menu; `newPane` forces a new pane there. */
+  onPickWorktree: (worktree: WorktreeChip, newPane: boolean) => void;
   /** Agent CLIs on PATH, offered as launchers while no agent runs. */
   agents: string[];
   onLaunchAgent: (agent: string) => void;
@@ -30,13 +32,26 @@ export function TerminalPane({
   onClose,
   onRestart,
   onAskForTask,
+  onPickWorktree,
   agents,
   onLaunchAgent,
 }: TerminalPaneProps) {
-  const [taskOpen, setTaskOpen] = useState(false);
+  const header = useRef<HTMLDivElement>(null);
+  const [taskOpen, setTaskOpen] = useDismissable(header);
   const showDetail = !compact && view.agent !== null && view.status !== "exited";
   const showLaunchers = view.agent === null && view.status !== "exited";
-  const showSecondRow = view.worktrees.length > 0 || (showDetail && view.lastCommand !== null);
+  // A reported task takes the second row; otherwise the last command may.
+  const showTaskLine = view.canShowTask && view.task !== null;
+  const showLastCommand = !showTaskLine && showDetail && view.lastCommand !== null;
+
+  useEffect(() => {
+    if (!view.canShowTask) setTaskOpen(false);
+  }, [view.canShowTask, setTaskOpen]);
+
+  const toggleTask = (event: MouseEvent) => {
+    event.stopPropagation();
+    setTaskOpen((value) => !value);
+  };
 
   return (
     <section
@@ -48,13 +63,13 @@ export function TerminalPane({
       aria-label={`Pane ${view.n}: ${view.title}`}
       onMouseDown={onFocus}
     >
-      <div className="pane__header">
+      <div className="pane__header" ref={header}>
         <div className="pane__row">
           <span className="pane__index">{view.n}</span>
           <span className="pane__repo ellipsis" title={view.cwd}>
             {view.title}
           </span>
-          {view.branch && <span className="pane__branch ellipsis">{view.branch}</span>}
+          {view.branch && <BranchLabel view={view} onPick={onPickWorktree} />}
 
           {(view.dirty || view.ahead > 0 || view.behind > 0) && (
             <span className="pane__git">
@@ -100,21 +115,15 @@ export function TerminalPane({
             </span>
           )}
 
-          {view.canShowTask && (
+          {/* Until the agent reports, the task lives behind this button. */}
+          {view.canShowTask && !showTaskLine && (
             <button
               type="button"
-              className={cx(
-                "pane__task-toggle",
-                taskOpen && "pane__task-toggle--open",
-                view.task !== null && "pane__task-toggle--reported",
-              )}
+              className={cx("pane__task-toggle", taskOpen && "pane__task-toggle--open")}
               aria-label={`Current task in pane ${view.n}`}
-              aria-pressed={taskOpen}
-              title={view.task ?? "What is the agent working on?"}
-              onClick={(event) => {
-                event.stopPropagation();
-                setTaskOpen((value) => !value);
-              }}
+              aria-expanded={taskOpen}
+              title="What is the agent working on?"
+              onClick={toggleTask}
             >
               task
             </button>
@@ -152,52 +161,37 @@ export function TerminalPane({
           </button>
         </div>
 
-        {showSecondRow && (
+        {showTaskLine && (
+          <button
+            type="button"
+            className={cx("pane__row", "pane__task-line", taskOpen && "pane__task-line--open")}
+            aria-label={`Current task in pane ${view.n}: ${view.task}`}
+            aria-expanded={taskOpen}
+            title={view.task ?? undefined}
+            onClick={toggleTask}
+          >
+            <span className="pane__task-dot" aria-hidden="true" />
+            <span className="pane__task-line-text ellipsis">{view.task}</span>
+            {view.taskAge && <span className="pane__task-line-age">{view.taskAge}</span>}
+          </button>
+        )}
+
+        {showLastCommand && (
           <div className="pane__row">
-            {view.worktrees.map((worktree) => (
-              <span
-                key={worktree.key}
-                className={cx(
-                  "pane__worktree",
-                  worktree.current && "pane__worktree--current",
-                  worktree.prunable && "pane__worktree--prunable",
-                )}
-                title={worktree.key}
-              >
-                <span className="ellipsis">{worktree.name}</span>
-                {worktree.locked && <span title="Locked">🔒</span>}
-                {worktree.paneNumber !== null && (
-                  <span className="pane__worktree-pane" title={`Open in pane ${worktree.paneNumber}`}>
-                    {worktree.paneNumber}
-                  </span>
-                )}
-              </span>
-            ))}
-
-            <span className="spacer" />
-
-            {showDetail && view.lastCommand && (
-              <span className="pane__last-command ellipsis" title={view.lastCommand}>
-                <span className="pane__last-command-sigil">$ </span>
-                {view.lastCommand}
-              </span>
-            )}
+            <span className="pane__last-command ellipsis" title={view.lastCommand ?? undefined}>
+              <span className="pane__last-command-sigil">$ </span>
+              {view.lastCommand}
+            </span>
           </div>
+        )}
+
+        {taskOpen && view.canShowTask && (
+          <TaskPopover agent={view.agent} task={view.task} taskAge={view.taskAge} onAsk={onAskForTask} />
         )}
       </div>
 
       <div className="pane__body">
         <XtermSurface id={view.id} />
-
-        {taskOpen && view.canShowTask && (
-          <TaskOverlay
-            agent={view.agent}
-            task={view.task}
-            taskAge={view.taskAge}
-            onAsk={onAskForTask}
-            onClose={() => setTaskOpen(false)}
-          />
-        )}
 
         {view.status === "exited" && (
           <div className="pane__exited">
@@ -222,13 +216,11 @@ export function TerminalPane({
 }
 
 /**
- * The header's "+": a click opens a pane in this pane's folder right next to
- * it; the small menu under it also offers a folder picker. Shift+click skips
- * the menu and picks a folder directly.
+ * Open state for a menu or popover that closes on Escape or on a pointer
+ * down anywhere outside `root`.
  */
-function OpenFromButton({ n, onOpenFrom }: { n: number; onOpenFrom: (how: OpenFromHow) => void }) {
+function useDismissable(root: RefObject<HTMLElement | null>) {
   const [open, setOpen] = useState(false);
-  const root = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -244,7 +236,134 @@ function OpenFromButton({ n, onOpenFrom }: { n: number; onOpenFrom: (how: OpenFr
       window.removeEventListener("pointerdown", onPointerDown, true);
       window.removeEventListener("keydown", onKeyDown, true);
     };
-  }, [open]);
+  }, [open, root]);
+
+  return [open, setOpen] as const;
+}
+
+/** Marks the branch when the pane sits in a linked worktree. */
+function WorktreeGlyph() {
+  return (
+    <svg className="pane__worktree-glyph" viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
+      <circle cx="4.5" cy="3.5" r="1.75" />
+      <circle cx="4.5" cy="12.5" r="1.75" />
+      <circle cx="11.5" cy="5.5" r="1.75" />
+      <path d="M4.5 5.25v5.5M11.5 7.25c0 2.6-7 1.6-7 3.5" />
+    </svg>
+  );
+}
+
+const MOVE_HINT: Record<WorktreeChip["move"], string> = {
+  here: "here",
+  cd: "cd",
+  focus: "go to pane",
+  "new-pane": "new pane",
+  none: "missing",
+};
+
+/**
+ * The branch name. Inside a linked worktree a small glyph sits in front of
+ * it; once the repo has more than one worktree it opens a menu that moves
+ * this pane to another one (Shift+click an entry: always a new pane).
+ */
+function BranchLabel({
+  view,
+  onPick,
+}: {
+  view: PaneView;
+  onPick: (worktree: WorktreeChip, newPane: boolean) => void;
+}) {
+  const root = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useDismissable(root);
+  const current = view.worktrees.find((worktree) => worktree.current);
+  const worktreeTitle = view.inWorktree && current ? `Linked worktree · ${current.key}` : null;
+
+  if (view.worktrees.length < 2) {
+    return (
+      <span className="pane__branch" title={worktreeTitle ?? undefined}>
+        {view.inWorktree && <WorktreeGlyph />}
+        <span className="ellipsis">{view.branch}</span>
+      </span>
+    );
+  }
+
+  const pick = (worktree: WorktreeChip, newPane: boolean) => {
+    setOpen(false);
+    onPick(worktree, newPane);
+  };
+
+  return (
+    <div className="pane__branch-wrap" ref={root}>
+      <button
+        type="button"
+        className={cx("pane__branch", "pane__branch--menu", open && "pane__branch--open")}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title={[worktreeTitle, `${view.worktrees.length} worktrees · switch`].filter(Boolean).join("\n")}
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen((value) => !value);
+        }}
+      >
+        {view.inWorktree && <WorktreeGlyph />}
+        <span className="ellipsis">{view.branch}</span>
+        <span className="pane__branch-caret" aria-hidden="true">
+          ▾
+        </span>
+      </button>
+
+      {open && (
+        <div
+          className="pane__menu pane__menu--start"
+          role="menu"
+          aria-label="Worktrees"
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <div className="pane__menu-label">Worktrees</div>
+          {view.worktrees.map((worktree) => {
+            const inert = worktree.move === "here" || worktree.move === "none";
+            return (
+              <button
+                key={worktree.key}
+                type="button"
+                role="menuitem"
+                className={cx(
+                  "pane__menu-item",
+                  "pane__worktree-item",
+                  worktree.current && "pane__worktree-item--current",
+                  worktree.prunable && "pane__worktree-item--prunable",
+                )}
+                disabled={inert}
+                title={inert ? worktree.key : `${worktree.key}\nShift+click: open in a new pane`}
+                onClick={(event) => pick(worktree, event.shiftKey)}
+              >
+                <span className="pane__worktree-mark" aria-hidden="true" />
+                <span className="pane__worktree-name ellipsis">{worktree.name}</span>
+                {worktree.main && worktree.name !== "main" && <span className="pane__worktree-tag">main</span>}
+                {worktree.locked && <span title="Locked">🔒</span>}
+                <span className="spacer" />
+                <span className="pane__menu-hint">
+                  {worktree.move === "focus" && worktree.paneNumber !== null
+                    ? `pane ${worktree.paneNumber}`
+                    : MOVE_HINT[worktree.move]}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The header's "+": a click opens a pane in this pane's folder right next to
+ * it; the small menu under it also offers a folder picker. Shift+click skips
+ * the menu and picks a folder directly.
+ */
+function OpenFromButton({ n, onOpenFrom }: { n: number; onOpenFrom: (how: OpenFromHow) => void }) {
+  const root = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useDismissable(root);
 
   const choose = (how: OpenFromHow) => {
     setOpen(false);

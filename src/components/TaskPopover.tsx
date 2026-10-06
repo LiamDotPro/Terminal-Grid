@@ -3,19 +3,20 @@ import { TASK_REPORT_INSTRUCTIONS } from "../lib/agentTask";
 
 const ASK_COOLDOWN_MS = 10_000;
 
-interface TaskOverlayProps {
+interface TaskPopoverProps {
   agent: string | null;
   task: string | null;
   taskAge: string | null;
   onAsk: () => void;
-  onClose: () => void;
 }
 
 /**
- * The card over the top right of the terminal that shows what the pane's agent
- * last reported through TERMINAL_GRID_TASK_FILE (design section 5.5).
+ * Drops down under the pane header from the task line (or the "task" button
+ * before the agent has reported anything). The header line shows the task on
+ * one row; this has the full text and the ways to get a report (design
+ * section 5.5).
  */
-export function TaskOverlay({ agent, task, taskAge, onAsk, onClose }: TaskOverlayProps) {
+export function TaskPopover({ agent, task, taskAge, onAsk }: TaskPopoverProps) {
   const [asked, setAsked] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -39,23 +40,10 @@ export function TaskOverlay({ agent, task, taskAge, onAsk, onClose }: TaskOverla
   };
 
   return (
-    <div className="pane__task" role="status" aria-live="polite">
+    <div className="pane__task" role="dialog" aria-label="Current task" onMouseDown={(event) => event.stopPropagation()}>
       <div className="pane__task-head">
         <span className="pane__task-label">Current task</span>
-        {taskAge && <span className="pane__task-age">{taskAge} ago</span>}
-        <span className="spacer" />
-        <button
-          type="button"
-          className="btn btn--icon"
-          aria-label="Hide task"
-          title="Hide task"
-          onClick={(event) => {
-            event.stopPropagation();
-            onClose();
-          }}
-        >
-          ×
-        </button>
+        {taskAge && task && <span className="pane__task-age">{taskAge} ago</span>}
       </div>
 
       {task ? (
@@ -73,8 +61,7 @@ export function TaskOverlay({ agent, task, taskAge, onAsk, onClose }: TaskOverla
           className="btn btn--quiet"
           disabled={asked}
           title="Types a short request into this pane asking the agent to report its task"
-          onClick={(event) => {
-            event.stopPropagation();
+          onClick={() => {
             setAsked(true);
             onAsk();
           }}
@@ -86,10 +73,7 @@ export function TaskOverlay({ agent, task, taskAge, onAsk, onClose }: TaskOverla
             type="button"
             className="btn btn--quiet"
             title="Copies a CLAUDE.md / AGENTS.md section that makes agents report their task"
-            onClick={(event) => {
-              event.stopPropagation();
-              copyInstructions();
-            }}
+            onClick={copyInstructions}
           >
             {copied ? "Copied" : "Copy instructions"}
           </button>

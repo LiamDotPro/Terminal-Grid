@@ -34,6 +34,7 @@ import type {
 import type { LayoutMode } from "../ipc/layout";
 import { TASK_REPORT_PROMPT } from "../lib/agentTask";
 import { errorMessage, isAppError } from "../lib/appError";
+import { cdCommand, clearLineKey } from "../lib/shellCommand";
 import { matchesAgentPattern } from "../terminals/osc";
 import { terminalRegistry } from "../terminals/registry";
 import { closeUnownedTerminals } from "./orphans";
@@ -64,6 +65,10 @@ export interface AppActions {
    * picker that starts in that folder.
    */
   newTerminalFrom(from: TerminalId, how: "same-folder" | "pick-folder"): Promise<void>;
+  /** Opens a pane in `cwd`, placed right after `from`. */
+  newTerminalIn(from: TerminalId, cwd: string): Promise<void>;
+  /** Types a cd into the pane's shell, moving it into `path`. */
+  changeDirectory(id: TerminalId, path: string): Promise<void>;
   closeTerminal(id: TerminalId): Promise<void>;
   restartTerminal(id: TerminalId): Promise<void>;
   focusTerminal(id: TerminalId): void;
@@ -250,6 +255,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       {
         onData: (id, data) => {
           void call("write_terminal", { id, data }).catch(fail);
+          // Enter at the prompt starts a command; the next prompt mark ends it.
+          if (data.includes("\r") && stateRef.current.terminals[id]?.atPrompt) {
+            dispatch({ type: "terminal/prompt", id, atPrompt: false });
+          }
+        },
+        onPrompt: (id) => {
+          if (stateRef.current.terminals[id]?.atPrompt !== true) {
+            dispatch({ type: "terminal/prompt", id, atPrompt: true });
+          }
         },
         onResize: (id, cols, rows) => {
           void call("resize_terminal", { id, cols, rows }).catch(() => {
@@ -471,6 +485,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
       newTerminal: () => openFrom(null, "pick-folder"),
       newTerminalHere: () => openFrom(null, "same-folder"),
       newTerminalFrom: (from, how) => openFrom(from, how),
+      newTerminalIn: (from, cwd) => spawn(cwd, true, anchorFor(from)),
+
+      changeDirectory: async (id, path) => {
+        const term = stateRef.current.terminals[id];
+        if (!term || term.info.exited) return;
+        const shell = term.info.shell;
+        try {
+          const clear = clearLineKey(shell);
+          if (clear) {
+            await call("write_terminal", { id, data: clear });
+            await new Promise((resolve) => window.setTimeout(resolve, SUBMIT_DELAY_MS));
+          }
+          await call("write_terminal", { id, data: `${cdCommand(shell, path)}\r` });
+          // cmd has no shell integration to report the new folder through OSC 7.
+          if (shell === "cmd") await call("set_terminal_cwd", { id, cwd: path });
+        } catch (error) {
+          fail(error);
+        }
+        terminalRegistry.focus(id);
+      },
 
       closeTerminal: async (id) => {
         const running = stateRef.current.terminals[id]?.agent;

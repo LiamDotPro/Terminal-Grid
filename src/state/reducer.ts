@@ -139,6 +139,7 @@ export type Action =
   | { type: "terminal/agent"; event: AgentEvent }
   | { type: "terminal/stats"; id: TerminalId; cpuPercent: number; memBytes: number }
   | { type: "terminal/command"; id: TerminalId; command: string }
+  | { type: "terminal/prompt"; id: TerminalId; atPrompt: boolean }
   | { type: "terminal/task"; id: TerminalId; task: string | null; updatedAt: number }
   | { type: "terminal/focus"; id: TerminalId | null }
   | { type: "terminal/focus-index"; index: number }
@@ -332,6 +333,12 @@ export function reducer(state: AppState, action: Action): AppState {
     case "terminal/command":
       return patchTerminal(state, action.id, (term) => ({ ...term, lastCommand: action.command }));
 
+    case "terminal/prompt": {
+      const term = state.terminals[action.id];
+      if (!term || term.atPrompt === action.atPrompt) return state;
+      return patchTerminal(state, action.id, () => ({ ...term, atPrompt: action.atPrompt }));
+    }
+
     case "terminal/task":
       return patchTerminal(state, action.id, (term) => ({
         ...term,
@@ -490,6 +497,7 @@ function newTerminal(info: TerminalInfo, now: number): TerminalState {
     task: null,
     finished: null,
     lastCommand: null,
+    atPrompt: null,
     stats: null,
     lastOutputAt: now,
   };

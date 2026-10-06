@@ -36,19 +36,38 @@ export interface TerminalState {
   /** Set when an agent finished and the user has not looked at the pane yet. */
   finished: FinishedMark | null;
   lastCommand: string | null;
+  /**
+   * Whether the shell sits at its prompt: set by the shell integration's
+   * prompt mark, cleared when Enter is typed. Null until a prompt mark has
+   * been seen (cmd never sends one).
+   */
+  atPrompt: boolean | null;
   stats: TerminalStats | null;
   lastOutputAt: number;
 }
 
 export type PaneStatus = "running" | "idle" | "finished" | "exited";
 
+/**
+ * What picking a worktree in the branch menu does: cd this pane into it, jump
+ * to the pane that already has it open, or open a new pane there (when an
+ * agent owns this pane's input, so a typed cd would land in its prompt).
+ */
+export type WorktreeMove = "here" | "cd" | "focus" | "new-pane" | "none";
+
 export interface WorktreeChip {
+  /** The worktree's path. */
   key: string;
   name: string;
   current: boolean;
+  main: boolean;
+  /** Another pane whose cwd is inside this worktree, on any page. */
+  openIn: TerminalId | null;
+  /** That pane's number when it is on the same page. */
   paneNumber: number | null;
   locked: boolean;
   prunable: boolean;
+  move: WorktreeMove;
 }
 
 export interface PaneView {
@@ -70,6 +89,9 @@ export interface PaneView {
   cpu: string | null;
   mem: string | null;
   lastCommand: string | null;
+  /** True when the cwd is in a linked worktree rather than the main checkout. */
+  inWorktree: boolean;
+  /** Every worktree of the repo; the branch menu lists them once there are two. */
   worktrees: WorktreeChip[];
   /** The header's task button shows while an agent runs or a task is known. */
   canShowTask: boolean;
@@ -116,28 +138,46 @@ export function toPaneView(term: TerminalState, index: number, ctx: PaneViewCont
     cpu: showStats && term.stats ? formatPercent(term.stats.cpuPercent) : null,
     mem: showStats && term.stats ? formatBytes(term.stats.memBytes) : null,
     lastCommand: status === "exited" ? null : term.lastCommand,
-    worktrees: toWorktreeChips(term, ctx.paneNumbers),
+    inWorktree: git?.isWorktree ?? false,
+    worktrees: toWorktreeChips(term, status, ctx.paneNumbers),
     canShowTask: status !== "exited" && (term.agent !== null || term.task !== null),
     task: status === "exited" ? null : (term.task?.text ?? null),
     taskAge: term.task ? formatElapsed(ctx.now - term.task.updatedAt) : null,
   };
 }
 
-function toWorktreeChips(term: TerminalState, paneNumbers: ReadonlyMap<TerminalId, number>): WorktreeChip[] {
+function toWorktreeChips(
+  term: TerminalState,
+  status: PaneStatus,
+  paneNumbers: ReadonlyMap<TerminalId, number>,
+): WorktreeChip[] {
   const worktrees = term.git?.worktrees ?? [];
+  // A cd is only typed at a shell prompt: never into an agent, a running
+  // program or a dead shell.
+  const canCd = status !== "exited" && term.agent === null && term.atPrompt !== false;
+
   return worktrees.map((worktree) => {
-    const otherPane = worktree.openIn
-      .filter((id) => id !== term.info.id)
-      .map((id) => paneNumbers.get(id))
-      .find((n): n is number => n !== undefined);
+    const others = worktree.openIn.filter((id) => id !== term.info.id);
+    // Prefer a pane on this page so the menu can name it.
+    const onPage = others.find((id) => paneNumbers.has(id));
+    const openIn = onPage ?? others[0] ?? null;
+
+    let move: WorktreeMove;
+    if (worktree.isCurrent) move = "here";
+    else if (worktree.prunable) move = "none";
+    else if (openIn) move = "focus";
+    else move = canCd ? "cd" : "new-pane";
 
     return {
       key: worktree.path,
       name: worktreeLabel(worktree.branch, worktree.head),
       current: worktree.isCurrent,
-      paneNumber: otherPane ?? null,
+      main: worktree.isMain,
+      openIn,
+      paneNumber: onPage ? (paneNumbers.get(onPage) ?? null) : null,
       locked: worktree.locked,
       prunable: worktree.prunable,
+      move,
     };
   });
 }
