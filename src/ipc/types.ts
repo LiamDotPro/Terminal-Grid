@@ -63,6 +63,9 @@ export interface NoteNode {
 
 export type HotkeyModifier = "ctrl+alt" | "ctrl+shift";
 
+/** "system" follows the OS light/dark setting; "black" is the total darkness theme. */
+export type ThemePreference = "system" | "light" | "dark" | "black";
+
 export interface Config {
   version: 1;
   shell: string | null;
@@ -75,6 +78,8 @@ export interface Config {
   fontSize: number;
   scrollback: number;
   restoreSessionOnLaunch: boolean;
+  theme: ThemePreference;
+  compactLayout: boolean;
 }
 
 export interface SavedTerminal {
@@ -184,6 +189,10 @@ export interface Commands {
   set_terminal_cwd: { in: { id: TerminalId; cwd: string }; out: void };
   report_cwd: { in: { id: TerminalId; cwd: string }; out: void };
   set_focused_terminal: { in: { id: TerminalId | null }; out: void };
+
+  // agents
+  /** Agent CLIs found on PATH, for the pane header launchers. */
+  installed_agents: { in: Record<string, never>; out: string[] };
 
   // git
   get_git_info: { in: { id: TerminalId }; out: GitInfo };

@@ -68,6 +68,8 @@ export function PaneGrid() {
                     else if (worktree.move === "cd") void actions.changeDirectory(id, worktree.key);
                     else if (worktree.move === "new-pane") void actions.newTerminalIn(id, worktree.key);
                   }}
+                  agents={state.installedAgents}
+                  onLaunchAgent={(agent) => void actions.launchAgent(id, agent)}
                 />
               );
             })}

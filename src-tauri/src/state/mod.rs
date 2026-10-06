@@ -15,8 +15,10 @@ use crate::error::{AppError, Result};
 const CONFIG_FILE: &str = "config.json";
 const SESSION_FILE: &str = "session.json";
 
+/// Fields missing from an older file take their defaults, so adding a setting
+/// never resets the ones a user already has.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct Config {
     pub version: u32,
     pub shell: Option<String>,
@@ -29,7 +31,13 @@ pub struct Config {
     pub font_size: u32,
     pub scrollback: u32,
     pub restore_session_on_launch: bool,
+    /// "system", "light", "dark" or "black".
+    pub theme: String,
+    /// Square, borderless panes with minimal gaps.
+    pub compact_layout: bool,
 }
+
+const THEMES: [&str; 4] = ["system", "light", "dark", "black"];
 
 impl Default for Config {
     fn default() -> Self {
@@ -48,6 +56,8 @@ impl Default for Config {
             font_size: 14,
             scrollback: 10_000,
             restore_session_on_launch: true,
+            theme: "system".to_string(),
+            compact_layout: false,
         }
     }
 }
@@ -66,6 +76,8 @@ pub struct ConfigPatch {
     pub font_size: Option<u32>,
     pub scrollback: Option<u32>,
     pub restore_session_on_launch: Option<bool>,
+    pub theme: Option<String>,
+    pub compact_layout: Option<bool>,
 }
 
 impl Config {
@@ -105,6 +117,14 @@ impl Config {
         }
         if let Some(value) = patch.restore_session_on_launch {
             self.restore_session_on_launch = value;
+        }
+        if let Some(value) = patch.theme {
+            if THEMES.contains(&value.as_str()) {
+                self.theme = value;
+            }
+        }
+        if let Some(value) = patch.compact_layout {
+            self.compact_layout = value;
         }
     }
 }
@@ -261,6 +281,35 @@ mod tests {
         assert_eq!(config.hotkey_modifier, "ctrl+alt");
         assert_eq!(config.agent_patterns, vec!["claude".to_string()]);
         assert_eq!(config.shell, None);
+    }
+
+    #[test]
+    fn appearance_patch_accepts_known_themes_only() {
+        let mut config = Config::default();
+        assert_eq!(config.theme, "system");
+        config.apply(ConfigPatch {
+            theme: Some("black".into()),
+            compact_layout: Some(true),
+            ..Default::default()
+        });
+        assert_eq!(config.theme, "black");
+        assert!(config.compact_layout);
+        config.apply(ConfigPatch {
+            theme: Some("sepia".into()),
+            ..Default::default()
+        });
+        assert_eq!(config.theme, "black");
+    }
+
+    #[test]
+    fn a_config_written_before_new_settings_keeps_its_values() {
+        let config: Config =
+            serde_json::from_str(r#"{"version":1,"fontSize":18,"hotkeyModifier":"ctrl+shift"}"#)
+                .expect("older config parses");
+        assert_eq!(config.font_size, 18);
+        assert_eq!(config.hotkey_modifier, "ctrl+shift");
+        assert_eq!(config.theme, "system");
+        assert!(!config.compact_layout);
     }
 
     #[test]

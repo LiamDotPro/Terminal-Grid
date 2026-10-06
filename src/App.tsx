@@ -5,6 +5,7 @@ import { HotkeyPopover } from "./components/HotkeyPopover";
 import { NotesView } from "./components/notes/NotesView";
 import { PaneGrid } from "./components/PaneGrid";
 import { SettingsDialog } from "./components/SettingsDialog";
+import { useAppearance } from "./lib/appearance";
 import { cx } from "./lib/cx";
 import { isModifierHeld, matchHotkey } from "./lib/hotkeys";
 import { useWindowFrame } from "./lib/windowFrame";
@@ -35,6 +36,7 @@ function Shell() {
   const actions = useAppActions();
   useGlobalHotkeys();
   useModifierHint();
+  useAppearance(state.config.theme, state.config.compactLayout);
   const frame = useWindowFrame();
 
   const isTerminals = state.activeTab === "terminals";

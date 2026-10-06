@@ -19,6 +19,9 @@ interface TerminalPaneProps {
   onAskForTask: () => void;
   /** A worktree picked in the branch menu; `newPane` forces a new pane there. */
   onPickWorktree: (worktree: WorktreeChip, newPane: boolean) => void;
+  /** Agent CLIs on PATH, offered as launchers while no agent runs. */
+  agents: string[];
+  onLaunchAgent: (agent: string) => void;
 }
 
 export function TerminalPane({
@@ -30,10 +33,13 @@ export function TerminalPane({
   onRestart,
   onAskForTask,
   onPickWorktree,
+  agents,
+  onLaunchAgent,
 }: TerminalPaneProps) {
   const header = useRef<HTMLDivElement>(null);
   const [taskOpen, setTaskOpen] = useDismissable(header);
   const showDetail = !compact && view.agent !== null && view.status !== "exited";
+  const showLaunchers = view.agent === null && view.status !== "exited";
   // A reported task takes the second row; otherwise the last command may.
   const showTaskLine = view.canShowTask && view.task !== null;
   const showLastCommand = !showTaskLine && showDetail && view.lastCommand !== null;
@@ -122,6 +128,22 @@ export function TerminalPane({
               task
             </button>
           )}
+
+          {showLaunchers &&
+            agents.map((agent) => (
+              <button
+                key={agent}
+                type="button"
+                className="pane__launch"
+                title={`Run ${agent} in this pane`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onLaunchAgent(agent);
+                }}
+              >
+                {agent}
+              </button>
+            ))}
 
           <OpenFromButton n={view.n} onOpenFrom={onOpenFrom} />
 

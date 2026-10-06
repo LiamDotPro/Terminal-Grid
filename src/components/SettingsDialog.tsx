@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import type { Config, HotkeyModifier } from "../ipc/types";
+import type { Config, HotkeyModifier, ThemePreference } from "../ipc/types";
 import { cx } from "../lib/cx";
 import { useAppActions, useAppState } from "../state/AppProvider";
 
@@ -12,12 +12,26 @@ const SHELLS = [
 
 const FONTS = ["JetBrains Mono", "Cascadia Mono", "Consolas", "Fira Code", "Menlo"];
 
+const THEMES: { value: ThemePreference; label: string }[] = [
+  { value: "system", label: "System" },
+  { value: "light", label: "Light" },
+  { value: "dark", label: "Dark" },
+  { value: "black", label: "Black" },
+];
+
 const MIN_FONT_SIZE = 8;
 const MAX_FONT_SIZE = 32;
 
 type Draft = Pick<
   Config,
-  "shell" | "agentPatterns" | "hotkeyModifier" | "fontFamily" | "fontSize" | "notesRoot"
+  | "shell"
+  | "agentPatterns"
+  | "hotkeyModifier"
+  | "fontFamily"
+  | "fontSize"
+  | "notesRoot"
+  | "theme"
+  | "compactLayout"
 >;
 
 /**
@@ -28,6 +42,11 @@ export function SettingsDialog() {
   const state = useAppState();
   const actions = useAppActions();
   const [draft, setDraft] = useState<Draft>(() => toDraft(state.config, state.notes.root));
+  // What the folder field started as. The configured path and the service's
+  // canonical one differ in form on Windows (C:/x against \\?\C:\x), so
+  // comparing with state.notes.root "changed" the folder on every save and
+  // closed the open note.
+  const [initialNotesRoot] = useState(draft.notesRoot);
   const [pattern, setPattern] = useState("");
   const sheet = useRef<HTMLFormElement>(null);
 
@@ -78,7 +97,7 @@ export function SettingsDialog() {
     await actions.saveConfig({ ...draft, agentPatterns });
     // The notes root is also a service level setting: switching it creates the
     // folder if needed and reloads the tree.
-    if (draft.notesRoot && draft.notesRoot !== state.notes.root) {
+    if (draft.notesRoot && draft.notesRoot !== initialNotesRoot) {
       await actions.setNotesRoot(draft.notesRoot);
     }
     actions.setSettingsOpen(false);
@@ -190,6 +209,51 @@ export function SettingsDialog() {
           </div>
 
           <div className="row">
+            <div className="row__label" id="settings-theme">
+              Theme
+              <div className="row__hint">System follows your OS; Black is total darkness</div>
+            </div>
+            <div className="segmented" role="radiogroup" aria-labelledby="settings-theme">
+              {THEMES.map(({ value, label }) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={draft.theme === value}
+                  className={cx("segmented__item", draft.theme === value && "segmented__item--active")}
+                  onClick={() => patch("theme", value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="row">
+            <div className="row__label" id="settings-compact">
+              Compact layout
+              <div className="row__hint">Square panes, no borders, minimal gaps</div>
+            </div>
+            <div className="segmented" role="radiogroup" aria-labelledby="settings-compact">
+              {[false, true].map((value) => (
+                <button
+                  key={String(value)}
+                  type="button"
+                  role="radio"
+                  aria-checked={draft.compactLayout === value}
+                  className={cx(
+                    "segmented__item",
+                    draft.compactLayout === value && "segmented__item--active",
+                  )}
+                  onClick={() => patch("compactLayout", value)}
+                >
+                  {value ? "On" : "Off"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="row">
             <label className="row__label" htmlFor="settings-font">
               Font
             </label>
@@ -290,6 +354,8 @@ function toDraft(config: Config, notesRoot: string | null): Draft {
     fontFamily: config.fontFamily ?? FONTS[0],
     fontSize: config.fontSize,
     notesRoot: config.notesRoot ?? notesRoot,
+    theme: config.theme,
+    compactLayout: config.compactLayout,
   };
 }
 

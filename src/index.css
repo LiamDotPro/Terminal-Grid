@@ -86,7 +86,7 @@ select {
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  scrollbar-color: rgb(var(--ink-rgb) / 0.18) transparent;
 }
 
 *::-webkit-scrollbar {
@@ -95,14 +95,14 @@ select {
 }
 
 *::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.18);
+  background: rgb(var(--ink-rgb) / 0.18);
   border: 3px solid transparent;
   background-clip: content-box;
   border-radius: 999px;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.28);
+  background: rgb(var(--ink-rgb) / 0.28);
   background-clip: content-box;
 }
 
@@ -137,7 +137,7 @@ select {
   position: fixed;
   inset: 0;
   z-index: 100;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 1px solid rgb(var(--ink-rgb) / 0.18);
   pointer-events: none;
 }
 
@@ -189,8 +189,8 @@ select {
   font-size: 11px;
   padding: 2px 7px;
   border-radius: 5px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgb(var(--ink-rgb) / 0.08);
+  border: 1px solid rgb(var(--ink-rgb) / 0.12);
   color: var(--text-strong);
   white-space: nowrap;
 }
@@ -210,7 +210,7 @@ select {
 .btn--quiet {
   height: 28px;
   padding: 0 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgb(var(--ink-rgb) / 0.1);
   color: var(--text-70);
   font-size: 12px;
   border-radius: 8px;
@@ -224,7 +224,7 @@ select {
 .btn--outline {
   height: 32px;
   padding: 0 14px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid rgb(var(--ink-rgb) / 0.14);
   color: var(--text-85);
   font-size: 12.5px;
 }
@@ -237,15 +237,15 @@ select {
   height: 32px;
   padding: 0 16px;
   background: var(--fill-5);
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  border: 1px solid rgb(var(--ink-rgb) / 0.28);
+  box-shadow: inset 0 1px 0 rgb(var(--ink-rgb) / 0.22);
   font-size: 12.5px;
   font-weight: 600;
   color: var(--text-strong);
 }
 
 .btn--primary:hover {
-  background: rgba(255, 255, 255, 0.22);
+  background: rgb(var(--ink-rgb) / 0.22);
 }
 
 .btn--icon {
@@ -272,14 +272,14 @@ select {
   padding: 0 10px 0 12px;
   border-radius: 9px;
   background: var(--fill-2);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid rgb(var(--ink-rgb) / 0.14);
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text-85);
 }
 
 .field:focus-within {
-  border-color: rgba(141, 220, 255, 0.55);
+  border-color: rgb(var(--accent-rgb) / 0.55);
 }
 
 .field > input,
@@ -299,7 +299,7 @@ select {
 }
 
 .field > select option {
-  background: #14161f;
+  background: var(--bg-option);
   color: var(--text);
 }
 

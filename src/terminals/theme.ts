@@ -1,5 +1,8 @@
 import type { ITheme } from "@xterm/xterm";
 
+/** The theme actually on screen once "system" is resolved. */
+export type ResolvedTheme = "light" | "dark" | "black";
+
 /**
  * xterm palette. The eight base colours are the ones the design uses for
  * terminal output (TerminalPane.dc.html `C`), extended into a full ANSI set so
@@ -32,3 +35,38 @@ export const TERMINAL_THEME: ITheme = {
   brightCyan: "#dff4ff",
   brightWhite: "#ffffff",
 };
+
+/**
+ * Light counterpart: the same hues, deepened until they read on the pale
+ * glass. "white" maps to a dark grey because programs use it for normal text.
+ */
+export const TERMINAL_THEME_LIGHT: ITheme = {
+  background: "rgba(0, 0, 0, 0)",
+  foreground: "#1f2433",
+  cursor: "#0c78b2",
+  cursorAccent: "#ffffff",
+  selectionBackground: "rgba(12, 120, 178, 0.22)",
+  selectionInactiveBackground: "rgba(24, 30, 52, 0.1)",
+
+  black: "#1f2433",
+  red: "#c93636",
+  green: "#16965c",
+  yellow: "#a86a00",
+  blue: "#0c78b2",
+  magenta: "#6a4fd6",
+  cyan: "#0a7f8f",
+  white: "#4a5165",
+
+  brightBlack: "rgba(31, 36, 51, 0.55)",
+  brightRed: "#e04848",
+  brightGreen: "#1aa868",
+  brightYellow: "#be7800",
+  brightBlue: "#1a8fd0",
+  brightMagenta: "#8064e6",
+  brightCyan: "#0e96a8",
+  brightWhite: "#05070d",
+};
+
+export function terminalTheme(theme: ResolvedTheme): ITheme {
+  return theme === "light" ? TERMINAL_THEME_LIGHT : TERMINAL_THEME;
+}

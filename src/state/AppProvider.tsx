@@ -37,6 +37,7 @@ import { errorMessage, isAppError } from "../lib/appError";
 import { cdCommand, clearLineKey } from "../lib/shellCommand";
 import { matchesAgentPattern } from "../terminals/osc";
 import { terminalRegistry } from "../terminals/registry";
+import { closeUnownedTerminals } from "./orphans";
 import { initialState, reducer, toSession, type AppState } from "./reducer";
 
 const AUTOSAVE_DELAY_MS = 600;
@@ -74,6 +75,8 @@ export interface AppActions {
   focusIndex(index: number): void;
   /** Types the task report prompt into the pane's agent and submits it. */
   askAgentForTask(id: TerminalId): Promise<void>;
+  /** Runs an installed agent CLI (e.g. "claude") in the pane's shell. */
+  launchAgent(id: TerminalId, agent: string): Promise<void>;
   movePane(dir: "up" | "down" | "left" | "right"): void;
   moveFocus(dir: "up" | "down" | "left" | "right"): void;
 
@@ -133,6 +136,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Bootstrap ------------------------------------------------------------
 
+  // StrictMode runs this effect twice in dev; the ref survives its simulated
+  // remount, so the session is restored once.
   const booted = useRef(false);
   useEffect(() => {
     if (booted.current) return;
@@ -144,9 +149,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
           call("config_get", {}),
           call("session_get", {}),
           call("notes_get_root", {}),
+          // No pane exists yet, so every shell the core already runs was left
+          // behind by an earlier page load (a webview reload).
+          closeUnownedTerminals(new Set()),
         ]);
         dispatch({ type: "ready", config, session });
         dispatch({ type: "notes/root", root: notesRoot.root });
+        // Only drives optional launcher buttons, so a failure stays quiet.
+        void call("installed_agents", {})
+          .then((agents) => dispatch({ type: "agents/installed", agents }))
+          .catch(() => {});
 
         const tree = await call("notes_tree", {});
         dispatch({ type: "notes/tree", tree });
@@ -542,6 +554,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
           // leave the prompt sitting unsubmitted.
           await new Promise((resolve) => window.setTimeout(resolve, SUBMIT_DELAY_MS));
           await call("write_terminal", { id, data: "\r" });
+        } catch (error) {
+          fail(error);
+        }
+      },
+
+      launchAgent: async (id, agent) => {
+        try {
+          await call("write_terminal", { id, data: `${agent}\r` });
+          terminalRegistry.focus(id);
         } catch (error) {
           fail(error);
         }

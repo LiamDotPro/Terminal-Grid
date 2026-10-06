@@ -111,6 +111,8 @@ pub fn run() {
             pty::set_terminal_cwd,
             pty::report_cwd,
             pty::set_focused_terminal,
+            // agents
+            agent::installed::installed_agents,
             // git
             git::get_git_info,
             git::refresh_git_info,
