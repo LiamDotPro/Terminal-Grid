@@ -259,47 +259,48 @@ impl NotesService {
         let last: Arc<Mutex<Option<(String, std::time::Instant)>>> = Arc::new(Mutex::new(None));
         let watch_root = root.clone();
 
-        let mut watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
-            let Ok(event) = event else { return };
-            let kind = match event.kind {
-                notify::EventKind::Create(_) => "create",
-                notify::EventKind::Remove(_) => "remove",
-                notify::EventKind::Modify(notify::event::ModifyKind::Name(_)) => "rename",
-                notify::EventKind::Modify(_) => "modify",
-                _ => return,
-            };
-
-            for path in event.paths {
-                if is_temp(&path) {
-                    continue;
-                }
-                let Some(rel_path) = paths::relative_of(&watch_root, &path) else {
-                    continue;
+        let mut watcher =
+            notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
+                let Ok(event) = event else { return };
+                let kind = match event.kind {
+                    notify::EventKind::Create(_) => "create",
+                    notify::EventKind::Remove(_) => "remove",
+                    notify::EventKind::Modify(notify::event::ModifyKind::Name(_)) => "rename",
+                    notify::EventKind::Modify(_) => "modify",
+                    _ => return,
                 };
-                if !path.is_dir() && !rel_path.to_lowercase().ends_with(".md") {
-                    continue;
-                }
 
-                let mut guard = last.lock().expect("notes debounce");
-                let now = std::time::Instant::now();
-                if let Some((previous, at)) = guard.as_ref() {
-                    if previous == &rel_path && now.duration_since(*at) < DEBOUNCE {
+                for path in event.paths {
+                    if is_temp(&path) {
                         continue;
                     }
-                }
-                *guard = Some((rel_path.clone(), now));
-                drop(guard);
+                    let Some(rel_path) = paths::relative_of(&watch_root, &path) else {
+                        continue;
+                    };
+                    if !path.is_dir() && !rel_path.to_lowercase().ends_with(".md") {
+                        continue;
+                    }
 
-                let _ = app.emit_to(
-                    "main",
-                    EVENT_NOTES_CHANGED,
-                    NotesChangedEvent { rel_path, kind },
-                );
-            }
-        })
-        .map_err(|error| AppError::Io {
-            message: error.to_string(),
-        })?;
+                    let mut guard = last.lock().expect("notes debounce");
+                    let now = std::time::Instant::now();
+                    if let Some((previous, at)) = guard.as_ref() {
+                        if previous == &rel_path && now.duration_since(*at) < DEBOUNCE {
+                            continue;
+                        }
+                    }
+                    *guard = Some((rel_path.clone(), now));
+                    drop(guard);
+
+                    let _ = app.emit_to(
+                        "main",
+                        EVENT_NOTES_CHANGED,
+                        NotesChangedEvent { rel_path, kind },
+                    );
+                }
+            })
+            .map_err(|error| AppError::Io {
+                message: error.to_string(),
+            })?;
 
         watcher
             .watch(&root, RecursiveMode::Recursive)
@@ -517,7 +518,8 @@ mod tests {
 
     impl TempRoot {
         fn new(name: &str) -> Self {
-            let path = std::env::temp_dir().join(format!("terminal-grid-{name}-{}", uuid::Uuid::new_v4()));
+            let path =
+                std::env::temp_dir().join(format!("terminal-grid-{name}-{}", uuid::Uuid::new_v4()));
             fs::create_dir_all(&path).expect("temp root");
             Self(path)
         }
@@ -542,7 +544,10 @@ mod tests {
 
         let node = notes.create("ideas/kafka", NodeKind::File).expect("file");
         assert_eq!(node.rel_path, "ideas/kafka.md");
-        assert_eq!(notes.read("ideas/kafka.md").expect("read").content, "# kafka\n");
+        assert_eq!(
+            notes.read("ideas/kafka.md").expect("read").content,
+            "# kafka\n"
+        );
     }
 
     #[test]
@@ -570,7 +575,9 @@ mod tests {
 
         let stale = current.saturating_sub(60_000);
         match notes.write("note.md", "mine", Some(stale)) {
-            Err(AppError::Conflict { current_mtime_ms, .. }) => {
+            Err(AppError::Conflict {
+                current_mtime_ms, ..
+            }) => {
                 assert!(current_mtime_ms >= current);
             }
             other => panic!("expected a conflict, got {other:?}"),

@@ -52,6 +52,22 @@ describe("parseMarkdown", () => {
     expect(blocks[0]).toMatchObject({ type: "list", ordered: true, start: 3 });
   });
 
+  it("reads task list items and drops their markers", () => {
+    const blocks = parseMarkdown("- [x] done\n- [ ] todo\n- plain\n- [X] `code` too");
+    expect(blocks[0]).toMatchObject({ type: "list", tasks: [true, false, null, true] });
+    if (blocks[0].type === "list") {
+      expect(blocks[0].items[0]).toEqual([{ type: "paragraph", children: [{ type: "text", value: "done" }] }]);
+      expect(blocks[0].items[3]).toEqual([
+        { type: "paragraph", children: [{ type: "code", value: "code" }, { type: "text", value: " too" }] },
+      ]);
+    }
+  });
+
+  it("leaves brackets that are not a task marker alone", () => {
+    const blocks = parseMarkdown("- [link](https://example.com)\n- [y] not a task");
+    expect(blocks[0]).toMatchObject({ tasks: [null, null] });
+  });
+
   it("reads block quotes and rules", () => {
     expect(parseMarkdown("> quoted")[0]).toMatchObject({ type: "quote" });
     expect(parseMarkdown("---")[0]).toEqual({ type: "rule" });

@@ -3,6 +3,7 @@
 
 use std::fs;
 use std::path::Path;
+#[cfg(windows)]
 use std::sync::OnceLock;
 
 use serde::Serialize;
@@ -183,7 +184,10 @@ mod tests {
             ShellKind::from_program(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.EXE"),
             ShellKind::WindowsPowerShell
         );
-        assert_eq!(ShellKind::from_program("/usr/local/bin/pwsh"), ShellKind::Pwsh);
+        assert_eq!(
+            ShellKind::from_program("/usr/local/bin/pwsh"),
+            ShellKind::Pwsh
+        );
         assert_eq!(ShellKind::from_program("/bin/zsh"), ShellKind::Zsh);
         assert_eq!(ShellKind::from_program("nu"), ShellKind::Other);
     }

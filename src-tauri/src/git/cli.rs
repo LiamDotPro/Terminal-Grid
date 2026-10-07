@@ -104,7 +104,9 @@ pub fn run_raw(cwd: &Path, args: &[&str], timeout: Duration) -> Result<RawOutput
 
     Ok(RawOutput {
         ok: status.success(),
-        stdout: stdout.and_then(|handle| handle.join().ok()).unwrap_or_default(),
+        stdout: stdout
+            .and_then(|handle| handle.join().ok())
+            .unwrap_or_default(),
         stderr: stderr
             .and_then(|handle| handle.join().ok())
             .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())

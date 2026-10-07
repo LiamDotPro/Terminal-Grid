@@ -136,7 +136,10 @@ impl PtyManager {
 
     /// Where the per session task files live, next to the integration scripts.
     pub fn tasks_dir(&self) -> PathBuf {
-        self.script_dir.lock().expect("pty script dir").join("tasks")
+        self.script_dir
+            .lock()
+            .expect("pty script dir")
+            .join("tasks")
     }
 
     /// Live shell pids, for the agent watcher's process tree walk.
@@ -151,7 +154,12 @@ impl PtyManager {
     }
 
     pub fn ids(&self) -> Vec<TerminalId> {
-        self.sessions.lock().expect("pty sessions").keys().cloned().collect()
+        self.sessions
+            .lock()
+            .expect("pty sessions")
+            .keys()
+            .cloned()
+            .collect()
     }
 
     pub fn focused(&self) -> Option<TerminalId> {
@@ -498,7 +506,11 @@ pub async fn create_terminal(
         let requested = cwd.map(PathBuf::from).unwrap_or_else(home_dir);
         // A saved directory that no longer exists must not stop the session from
         // starting (design section 9).
-        let cwd = if requested.is_dir() { requested } else { home_dir() };
+        let cwd = if requested.is_dir() {
+            requested
+        } else {
+            home_dir()
+        };
 
         let state = app.state::<crate::AppState>();
         let id = uuid::Uuid::new_v4().to_string();

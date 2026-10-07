@@ -5,12 +5,22 @@ import { useAppearance } from "../lib/appearance";
 import { IS_MAC } from "../lib/hotkeys";
 import { useAppActions, useAppState } from "../state/AppProvider";
 
-const SHELLS = [
-  { value: "", label: "Auto (pwsh, then Windows PowerShell)" },
-  { value: "pwsh.exe", label: "pwsh.exe" },
-  { value: "powershell.exe", label: "powershell.exe" },
-  { value: "cmd.exe", label: "cmd.exe" },
-];
+/** The backend's fallback order differs by platform (src-tauri/src/pty/shell.rs). */
+const IS_WINDOWS = typeof navigator !== "undefined" && /Win/.test(navigator.platform || navigator.userAgent);
+
+const SHELLS = IS_WINDOWS
+  ? [
+      { value: "", label: "Auto (pwsh, then Windows PowerShell)" },
+      { value: "pwsh.exe", label: "pwsh.exe" },
+      { value: "powershell.exe", label: "powershell.exe" },
+      { value: "cmd.exe", label: "cmd.exe" },
+    ]
+  : [
+      { value: "", label: "Auto ($SHELL, then bash)" },
+      { value: "zsh", label: "zsh" },
+      { value: "bash", label: "bash" },
+      { value: "fish", label: "fish" },
+    ];
 
 const FONTS = ["JetBrains Mono", "Cascadia Mono", "Consolas", "Fira Code", "Menlo"];
 
@@ -19,6 +29,8 @@ const THEMES: { value: ThemePreference; label: string }[] = [
   { value: "light", label: "Light" },
   { value: "dark", label: "Dark" },
   { value: "black", label: "Black" },
+  // The see-through window needs the macOS window material.
+  ...(IS_MAC ? [{ value: "glass" as const, label: "Glass" }] : []),
 ];
 
 const MIN_FONT_SIZE = 8;
@@ -34,6 +46,8 @@ type Draft = Pick<
   | "notesRoot"
   | "theme"
   | "compactLayout"
+  | "focusColor"
+  | "finishedColor"
 >;
 
 /**
@@ -52,7 +66,10 @@ export function SettingsDialog() {
   const [initialNotesRoot] = useState(draft.notesRoot);
   const [pattern, setPattern] = useState("");
   const sheet = useRef<HTMLFormElement>(null);
-  useAppearance(draft.theme, draft.compactLayout);
+  useAppearance(draft.theme, draft.compactLayout, {
+    focus: draft.focusColor,
+    finished: draft.finishedColor,
+  });
 
   useEffect(() => {
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
@@ -146,6 +163,10 @@ export function SettingsDialog() {
                     {shell.label}
                   </option>
                 ))}
+                {/* A shell set in config.json, or on another platform, still shows. */}
+                {draft.shell && !SHELLS.some((shell) => shell.value === draft.shell) && (
+                  <option value={draft.shell}>{draft.shell}</option>
+                )}
               </select>
               <span className="field__chevron" aria-hidden="true">
                 ▾
@@ -224,7 +245,10 @@ export function SettingsDialog() {
           <div className="row">
             <div className="row__label" id="settings-theme">
               Theme
-              <div className="row__hint">System follows your OS; Black is total darkness</div>
+              <div className="row__hint">
+                System follows your OS; Black is total darkness
+                {IS_MAC && "; Glass shows your desktop through the window (Dark in full screen)"}
+              </div>
             </div>
             <div className="segmented" role="radiogroup" aria-labelledby="settings-theme">
               {THEMES.map(({ value, label }) => (
@@ -263,6 +287,27 @@ export function SettingsDialog() {
                   {value ? "On" : "Off"}
                 </button>
               ))}
+            </div>
+          </div>
+
+          <div className="row">
+            <div className="row__label">
+              Colours
+              <div className="row__hint">Reset follows the theme</div>
+            </div>
+            <div className="color-picks">
+              <ColorPick
+                label="Focus ring"
+                token="--focus-rgb"
+                value={draft.focusColor}
+                onChange={(value) => patch("focusColor", value)}
+              />
+              <ColorPick
+                label="Agent finished"
+                token="--finished-rgb"
+                value={draft.finishedColor}
+                onChange={(value) => patch("finishedColor", value)}
+              />
             </div>
           </div>
 
@@ -369,7 +414,53 @@ function toDraft(config: Config, notesRoot: string | null): Draft {
     notesRoot: config.notesRoot ?? notesRoot,
     theme: config.theme,
     compactLayout: config.compactLayout,
+    focusColor: config.focusColor,
+    finishedColor: config.finishedColor,
   };
+}
+
+/**
+ * A colour swatch over the system colour picker. The swatch paints the live
+ * token, so it shows the theme's colour until one is chosen and follows the
+ * theme preview.
+ */
+function ColorPick({
+  label,
+  token,
+  value,
+  onChange,
+}: {
+  label: string;
+  token: string;
+  value: string | null;
+  onChange: (value: string | null) => void;
+}) {
+  return (
+    <div className="color-pick">
+      <label className="color-pick__swatch" style={{ background: `rgb(var(${token}))` }}>
+        <input
+          type="color"
+          className="color-pick__input"
+          aria-label={label}
+          value={value ?? channelsToHex(getComputedStyle(document.documentElement).getPropertyValue(token))}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      </label>
+      <span className="color-pick__label">{label}</span>
+      {value && (
+        <button type="button" className="color-pick__reset" onClick={() => onChange(null)}>
+          Reset
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** "141 220 255" as #8ddcff, the format a colour input needs. */
+function channelsToHex(channels: string): string {
+  const parts = channels.trim().split(/\s+/).map(Number);
+  if (parts.length !== 3 || parts.some((part) => !Number.isFinite(part))) return "#000000";
+  return `#${parts.map((part) => Math.round(part).toString(16).padStart(2, "0")).join("")}`;
 }
 
 function clampFontSize(value: number): number {

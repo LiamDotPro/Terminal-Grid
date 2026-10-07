@@ -1,13 +1,14 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Chrome } from "./components/Chrome";
 import { EmptyState } from "./components/EmptyState";
 import { HotkeyPopover } from "./components/HotkeyPopover";
 import { NotesView } from "./components/notes/NotesView";
 import { PaneGrid } from "./components/PaneGrid";
 import { SettingsDialog } from "./components/SettingsDialog";
+import { Splash } from "./components/Splash";
 import { useAppearance } from "./lib/appearance";
 import { cx } from "./lib/cx";
-import { hotkeyScheme, isModifierHeld, matchHotkey } from "./lib/hotkeys";
+import { hotkeyScheme, IS_MAC, isModifierHeld, matchHotkey } from "./lib/hotkeys";
 import { useWindowFrame } from "./lib/windowFrame";
 import { AppProvider, useAppActions, useAppState } from "./state/AppProvider";
 
@@ -40,13 +41,22 @@ function Shell() {
   useModifierHint();
   // Settings previews its draft appearance while open; closing it (Save or
   // Cancel) hands back to the saved config.
-  useAppearance(state.config.theme, state.config.compactLayout, !state.settingsOpen);
+  useAppearance(
+    state.config.theme,
+    state.config.compactLayout,
+    { focus: state.config.focusColor, finished: state.config.finishedColor },
+    !state.settingsOpen,
+  );
   const frame = useWindowFrame();
+  // The launch splash plays over the app, which stays hidden ("hold") until the
+  // handoff lets the chrome in ("reveal").
+  const [splash, setSplash] = useState<"hold" | "reveal" | null>("hold");
 
   const isTerminals = state.activeTab === "terminals";
 
+  // macOS draws a native edge round the window; elsewhere the app draws one.
   return (
-    <div className={cx("app", frame === "windowed" && "app--windowed")}>
+    <div className={cx("app", frame === "windowed" && !IS_MAC && "app--windowed")} data-splash={splash ?? undefined}>
       <Chrome frame={frame} />
 
       <div className="app__body">
@@ -57,6 +67,15 @@ function Shell() {
           <NotesView />
         </div>
       </div>
+
+      {splash && (
+        <Splash
+          booted={state.booted}
+          restoring={state.restoringPanes}
+          onReveal={() => setSplash("reveal")}
+          onDone={() => setSplash(null)}
+        />
+      )}
 
       {state.hotkeysOpen && <HotkeyPopover />}
       {state.settingsOpen && <SettingsDialog />}
@@ -98,6 +117,19 @@ function useGlobalHotkeys(): void {
       // our text boxes it belongs to the box. The terminal's own hidden input
       // is not one of those.
       if (action.type === "toggle-review" && scheme === "mac" && isTextField(event.target)) return;
+      // ⌘S saves in the review editor and the note editor; only a terminal's
+      // selection is ours to save.
+      if (action.type === "save-note" && isTextField(event.target)) return;
+      // In the review panel plain Alt+↑ / Alt+↓ step through changed files.
+      if (
+        action.type === "move-focus" &&
+        (action.dir === "up" || action.dir === "down") &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        isInReview(event.target)
+      ) {
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
 
@@ -148,6 +180,9 @@ function useGlobalHotkeys(): void {
           break;
         case "toggle-review":
           actions.toggleReview();
+          break;
+        case "save-note":
+          if (state.activeTab === "terminals" && state.focusedId) void actions.saveSelection(state.focusedId);
           break;
       }
     };
@@ -203,6 +238,10 @@ function useModifierHint(): void {
       window.removeEventListener("blur", clear);
     };
   }, [actions, state.config.hotkeyModifier, state.hotkeysOpen]);
+}
+
+function isInReview(target: EventTarget | null): boolean {
+  return Boolean((target as HTMLElement | null)?.closest?.(".review"));
 }
 
 function isTextField(target: EventTarget | null): boolean {

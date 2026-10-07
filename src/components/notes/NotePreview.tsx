@@ -34,6 +34,12 @@ export function NotePreview() {
   );
 }
 
+/** Markdown rendered the way the preview does it, for other views of a note. */
+export function MarkdownDoc({ content }: { content: string }) {
+  const blocks = useMemo(() => parseMarkdown(content), [content]);
+  return <article className="preview__doc">{blocks.map(renderBlock)}</article>;
+}
+
 function renderBlock(block: Block, index: number): ReactNode {
   switch (block.type) {
     case "heading": {
@@ -43,9 +49,22 @@ function renderBlock(block: Block, index: number): ReactNode {
     case "paragraph":
       return <p key={index}>{block.children.map(renderInline)}</p>;
     case "list": {
-      const items = block.items.map((item, itemIndex) => (
-        <li key={itemIndex}>{item.map(renderListChild)}</li>
-      ));
+      const items = block.items.map((item, itemIndex) => {
+        const checked = block.tasks[itemIndex] ?? null;
+        if (checked === null) return <li key={itemIndex}>{item.map(renderListChild)}</li>;
+        return (
+          <li key={itemIndex} className="task">
+            <span
+              className="task__box"
+              role="checkbox"
+              aria-checked={checked}
+              aria-disabled="true"
+              data-checked={checked || undefined}
+            />
+            {item.map(renderListChild)}
+          </li>
+        );
+      });
       return block.ordered ? (
         <ol key={index} start={block.start}>
           {items}

@@ -40,6 +40,7 @@ describe("matchHotkey with Ctrl+Alt", () => {
     expect(matchHotkey(ctrlAlt("KeyP"), "ctrl+alt")).toEqual({ type: "notes-toggle", panel: "preview" });
     expect(matchHotkey(ctrlAlt("Enter"), "ctrl+alt")).toEqual({ type: "toggle-review" });
     expect(matchHotkey(ctrlAlt("NumpadEnter"), "ctrl+alt")).toEqual({ type: "toggle-review" });
+    expect(matchHotkey(ctrlAlt("KeyS"), "ctrl+alt")).toEqual({ type: "save-note" });
   });
 
   it("uses Shift to qualify the chord", () => {
@@ -113,7 +114,7 @@ describe("isModifierHeld", () => {
 describe("hotkeyHints", () => {
   it("renders every label with the active modifier", () => {
     const hints = hotkeyHints("ctrl+shift");
-    expect(hints).toHaveLength(14);
+    expect(hints).toHaveLength(15);
     // Alt+Arrow focus movement and F11 are the bindings that do not use the chord.
     const chorded = hints.filter((hint) => !hint.key.startsWith("Alt+") && hint.key !== "F11");
     expect(chorded).toHaveLength(hints.length - 2);
@@ -127,7 +128,7 @@ describe("hotkeyHints", () => {
 
   it("writes the macOS layout with Mac symbols only", () => {
     const hints = hotkeyHints("mac");
-    expect(hints).toHaveLength(14);
+    expect(hints).toHaveLength(15);
     expect(hints.some((hint) => /Ctrl|Alt|Shift/.test(hint.key))).toBe(false);
     expect(shortcutLabel("mac", "toggle-review")).toBe("⌘↩");
     expect(focusPaneLabel("mac", 3)).toBe("⌘3");
@@ -156,6 +157,7 @@ describe("the macOS layout", () => {
     expect(matchHotkey(cmd("BracketRight", { shiftKey: true }), "mac")).toEqual({ type: "page", delta: 1 });
     expect(matchHotkey(cmd("BracketLeft"), "mac")).toEqual({ type: "page", delta: -1 });
     expect(matchHotkey(cmd("KeyF", { ctrlKey: true }), "mac")).toEqual({ type: "toggle-fullscreen" });
+    expect(matchHotkey(cmd("KeyS"), "mac")).toEqual({ type: "save-note" });
   });
 
   it("moves focus with Option+Command and panes with Control+Command", () => {

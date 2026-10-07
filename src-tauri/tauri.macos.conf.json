@@ -1,0 +1,23 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Terminal Grid",
+        "fullscreen": true,
+        "width": 1280,
+        "height": 800,
+        "center": true,
+        "resizable": true,
+        "decorations": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": { "x": 16, "y": 22 },
+        "transparent": true,
+        "minWidth": 1024,
+        "minHeight": 640
+      }
+    ]
+  }
+}

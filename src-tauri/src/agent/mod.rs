@@ -107,9 +107,7 @@ pub fn step(
             }
             if !*announced && now.duration_since(*since) >= min_running {
                 *announced = true;
-                return Some(Transition::Started {
-                    name: name.clone(),
-                });
+                return Some(Transition::Started { name: name.clone() });
             }
             None
         }
@@ -200,10 +198,7 @@ impl AgentWatcher {
                 }
 
                 let mut woken = shared.wake.lock().expect("agent wake");
-                let (guard, _) = shared
-                    .signal
-                    .wait_timeout(woken, TICK)
-                    .expect("agent wake");
+                let (guard, _) = shared.signal.wait_timeout(woken, TICK).expect("agent wake");
                 woken = guard;
                 *woken = false;
             }
@@ -363,7 +358,12 @@ mod tests {
         let mut state = AgentState::Idle;
         step(&mut state, Some("claude"), start, MIN);
 
-        let announced = step(&mut state, Some("claude"), start + Duration::from_secs(2), MIN);
+        let announced = step(
+            &mut state,
+            Some("claude"),
+            start + Duration::from_secs(2),
+            MIN,
+        );
         assert_eq!(
             announced,
             Some(Transition::Started {
@@ -387,9 +387,19 @@ mod tests {
         let start = Instant::now();
         let mut state = AgentState::Idle;
         step(&mut state, Some("claude"), start, MIN);
-        step(&mut state, Some("claude"), start + Duration::from_secs(2), MIN);
+        step(
+            &mut state,
+            Some("claude"),
+            start + Duration::from_secs(2),
+            MIN,
+        );
         assert_eq!(
-            step(&mut state, Some("claude"), start + Duration::from_secs(3), MIN),
+            step(
+                &mut state,
+                Some("claude"),
+                start + Duration::from_secs(3),
+                MIN
+            ),
             None
         );
     }
@@ -399,9 +409,19 @@ mod tests {
         let start = Instant::now();
         let mut state = AgentState::Idle;
         step(&mut state, Some("claude"), start, MIN);
-        step(&mut state, Some("claude"), start + Duration::from_secs(2), MIN);
+        step(
+            &mut state,
+            Some("claude"),
+            start + Duration::from_secs(2),
+            MIN,
+        );
 
-        let swapped = step(&mut state, Some("codex"), start + Duration::from_secs(4), MIN);
+        let swapped = step(
+            &mut state,
+            Some("codex"),
+            start + Duration::from_secs(4),
+            MIN,
+        );
         assert!(matches!(
             swapped,
             Some(Transition::Finished { ref name, .. }) if name == "claude"

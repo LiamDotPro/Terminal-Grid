@@ -63,7 +63,10 @@ pub fn validate_name(name: &str) -> Result<()> {
     if trimmed.is_empty() || trimmed == "." || trimmed == ".." {
         return Err(invalid(name, "the name is empty or reserved"));
     }
-    if name.chars().any(|c| ILLEGAL.contains(&c) || (c as u32) < 0x20) {
+    if name
+        .chars()
+        .any(|c| ILLEGAL.contains(&c) || (c as u32) < 0x20)
+    {
         return Err(invalid(name, r#"< > : " / \ | ? * are not allowed"#));
     }
     if name.ends_with('.') || name.ends_with(' ') {
@@ -104,7 +107,10 @@ mod tests {
     #[test]
     fn resolves_a_nested_relative_path() {
         let resolved = resolve(&root(), "agents/claude-code.md").expect("should resolve");
-        assert!(resolved.ends_with("agents/claude-code.md") || resolved.ends_with(r"agents\claude-code.md"));
+        assert!(
+            resolved.ends_with("agents/claude-code.md")
+                || resolved.ends_with(r"agents\claude-code.md")
+        );
     }
 
     #[test]

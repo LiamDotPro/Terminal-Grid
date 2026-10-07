@@ -12,6 +12,7 @@
 @import "./styles/notes.css";
 @import "./styles/overlays.css";
 @import "./styles/review.css";
+@import "./styles/splash.css";
 
 *,
 *::before,

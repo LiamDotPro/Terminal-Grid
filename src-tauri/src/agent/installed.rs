@@ -88,9 +88,18 @@ fn login_shell_path() -> Option<String> {
 /// can't be asked.
 #[cfg(not(windows))]
 fn usual_dirs() -> Vec<PathBuf> {
-    let mut found = vec![PathBuf::from("/opt/homebrew/bin"), PathBuf::from("/usr/local/bin")];
+    let mut found = vec![
+        PathBuf::from("/opt/homebrew/bin"),
+        PathBuf::from("/usr/local/bin"),
+    ];
     if let Some(home) = dirs::home_dir() {
-        for sub in [".local/bin", ".claude/local", ".npm-global/bin", ".bun/bin", ".cargo/bin"] {
+        for sub in [
+            ".local/bin",
+            ".claude/local",
+            ".npm-global/bin",
+            ".bun/bin",
+            ".cargo/bin",
+        ] {
             found.push(home.join(sub));
         }
     }
@@ -147,7 +156,10 @@ mod tests {
     #[test]
     fn the_path_is_read_from_env_output_past_startup_noise() {
         let output = "Welcome back!\nPATH=not this one\nHOME=/Users/me\nPATH=/Users/me/.local/bin:/usr/bin\nSHELL=/bin/zsh\n";
-        assert_eq!(path_from_env_output(output), Some("/Users/me/.local/bin:/usr/bin"));
+        assert_eq!(
+            path_from_env_output(output),
+            Some("/Users/me/.local/bin:/usr/bin")
+        );
         assert_eq!(path_from_env_output("no path here"), None);
     }
 }

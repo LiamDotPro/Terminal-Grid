@@ -26,6 +26,64 @@ export function layoutFor(count: number, mode: LayoutMode = "grid"): LayoutSpec 
   return { cols: 3, rows: 3 };
 }
 
+/**
+ * Panes in each row of a page, top to bottom. When the count does not fill the
+ * grid the last row is short, and its panes widen to cover the whole row.
+ */
+export function rowCounts(count: number, mode: LayoutMode = "grid"): number[] {
+  const { cols, rows } = layoutFor(count, mode);
+  const n = Math.max(1, count);
+  return Array.from({ length: rows }, (_, row) => Math.min(cols, n - row * cols));
+}
+
+/**
+ * The share of the page each row takes, and of its row each pane takes. Each
+ * list sums to 1. Rows with the same pane count share their column sizes, so
+ * the full rows of a grid stay aligned.
+ */
+export interface PageSizes { rows: number[]; cols: number[][] }
+
+export const evenSplit = (n: number): number[] => Array.from({ length: n }, () => 1 / n);
+
+export function evenSizes(counts: number[]): PageSizes {
+  return { rows: evenSplit(counts.length), cols: counts.map(evenSplit) };
+}
+
+/** True when `sizes` was made for a page with these row counts. */
+export function sizesFit(sizes: PageSizes, counts: number[]): boolean {
+  return sizes.rows.length === counts.length && sizes.cols.every((row, index) => row.length === counts[index]);
+}
+
+/** Where each size starts along its track, plus the end: [0, a, a + b, ..., 1]. */
+export function offsets(sizes: number[]): number[] {
+  const out = [0];
+  for (const size of sizes) out.push((out[out.length - 1] ?? 0) + size);
+  return out;
+}
+
+/**
+ * Moves the divider after `sizes[index]` to `at` (0..1 along the track). Only
+ * its two neighbours change, and neither drops below `min`.
+ */
+export function moveDivider(sizes: number[], index: number, at: number, min: number): number[] {
+  const a = sizes[index];
+  const b = sizes[index + 1];
+  if (a === undefined || b === undefined) return sizes;
+  const start = offsets(sizes)[index] ?? 0;
+  const pair = a + b;
+  const floor = Math.min(min, pair / 2);
+  const first = Math.min(Math.max(at - start, floor), pair - floor);
+  const next = sizes.slice();
+  next[index] = first;
+  next[index + 1] = pair - first;
+  return next;
+}
+
+/** Applies new column sizes to every row with `count` panes. */
+export function withColumns(sizes: PageSizes, count: number, cols: number[]): PageSizes {
+  return { ...sizes, cols: sizes.cols.map((row) => (row.length === count ? cols : row)) };
+}
+
 /** The mode after `mode` in the order the chrome's segmented control shows them. */
 export function nextLayoutMode(mode: LayoutMode): LayoutMode {
   const index = LAYOUT_MODES.indexOf(mode);

@@ -31,13 +31,17 @@ pub struct Config {
     pub font_size: u32,
     pub scrollback: u32,
     pub restore_session_on_launch: bool,
-    /// "system", "light", "dark" or "black".
+    /// "system", "light", "dark", "black" or "glass" (macOS only).
     pub theme: String,
     /// Square, borderless panes with minimal gaps.
     pub compact_layout: bool,
+    /// `#rrggbb` for the focused pane's ring; None follows the theme.
+    pub focus_color: Option<String>,
+    /// `#rrggbb` for a pane whose agent finished; None follows the theme.
+    pub finished_color: Option<String>,
 }
 
-const THEMES: [&str; 4] = ["system", "light", "dark", "black"];
+const THEMES: [&str; 5] = ["system", "light", "dark", "black", "glass"];
 
 impl Default for Config {
     fn default() -> Self {
@@ -58,26 +62,54 @@ impl Default for Config {
             restore_session_on_launch: true,
             theme: "system".to_string(),
             compact_layout: false,
+            focus_color: None,
+            finished_color: None,
         }
     }
 }
 
-/// Every field optional so the frontend can send a partial update.
+/// Every field optional so the frontend can send a partial update. For the
+/// nullable settings a missing field leaves the value alone and `null` clears
+/// it (`Some(None)`); serde alone reads both as None.
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigPatch {
+    #[serde(default, deserialize_with = "nullable")]
     pub shell: Option<Option<String>>,
     pub shell_args: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "nullable")]
     pub notes_root: Option<Option<PathBuf>>,
     pub agent_patterns: Option<Vec<String>>,
     pub idle_timeout_ms: Option<u64>,
     pub hotkey_modifier: Option<String>,
+    #[serde(default, deserialize_with = "nullable")]
     pub font_family: Option<Option<String>>,
     pub font_size: Option<u32>,
     pub scrollback: Option<u32>,
     pub restore_session_on_launch: Option<bool>,
     pub theme: Option<String>,
     pub compact_layout: Option<bool>,
+    #[serde(default, deserialize_with = "nullable")]
+    pub focus_color: Option<Option<String>>,
+    #[serde(default, deserialize_with = "nullable")]
+    pub finished_color: Option<Option<String>>,
+}
+
+/// A field that is present: `null` becomes `Some(None)`.
+fn nullable<'de, T, D>(deserializer: D) -> std::result::Result<Option<Option<T>>, D::Error>
+where
+    T: Deserialize<'de>,
+    D: serde::Deserializer<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
+}
+
+/// `#rrggbb` in lower case, or None for anything else.
+fn hex_color(value: &str) -> Option<String> {
+    let value = value.trim();
+    let digits = value.strip_prefix('#')?;
+    (digits.len() == 6 && digits.chars().all(|c| c.is_ascii_hexdigit()))
+        .then(|| value.to_ascii_lowercase())
 }
 
 impl Config {
@@ -125,6 +157,19 @@ impl Config {
         }
         if let Some(value) = patch.compact_layout {
             self.compact_layout = value;
+        }
+        // A value that isn't a colour is ignored rather than clearing the old one.
+        match patch.focus_color {
+            Some(None) => self.focus_color = None,
+            Some(Some(value)) => self.focus_color = hex_color(&value).or(self.focus_color.take()),
+            None => {}
+        }
+        match patch.finished_color {
+            Some(None) => self.finished_color = None,
+            Some(Some(value)) => {
+                self.finished_color = hex_color(&value).or(self.finished_color.take())
+            }
+            None => {}
         }
     }
 }
@@ -200,8 +245,9 @@ fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let json = serde_json::to_string_pretty(value)
-        .map_err(|e| AppError::Io { message: e.to_string() })?;
+    let json = serde_json::to_string_pretty(value).map_err(|e| AppError::Io {
+        message: e.to_string(),
+    })?;
     let temp = path.with_extension("json.tmp");
     fs::write(&temp, json)?;
     fs::rename(&temp, path)?;
@@ -210,10 +256,9 @@ fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
 
 /// `%APPDATA%\com.liamread.terminalgrid` on Windows.
 pub fn config_dir(app: &AppHandle) -> Result<PathBuf> {
-    let dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| AppError::Io { message: e.to_string() })?;
+    let dir = app.path().app_config_dir().map_err(|e| AppError::Io {
+        message: e.to_string(),
+    })?;
     fs::create_dir_all(&dir)?;
     Ok(dir)
 }
@@ -226,10 +271,7 @@ pub fn config_get(state: State<'_, crate::AppState>) -> Config {
 }
 
 #[tauri::command]
-pub fn config_set(
-    state: State<'_, crate::AppState>,
-    patch: ConfigPatch,
-) -> Result<Config> {
+pub fn config_set(state: State<'_, crate::AppState>, patch: ConfigPatch) -> Result<Config> {
     let notes_root = patch.notes_root.clone().flatten();
     let config = state.state.set_config(patch)?;
     if let Some(root) = notes_root {
@@ -335,5 +377,49 @@ mod tests {
             ..Default::default()
         });
         assert_eq!(config.font_family, None);
+    }
+
+    #[test]
+    fn a_null_from_the_frontend_clears_an_optional_field() {
+        let patch: ConfigPatch = serde_json::from_str(r#"{"shell":null}"#).expect("patch parses");
+        let mut config = Config {
+            shell: Some("zsh".into()),
+            ..Config::default()
+        };
+        config.apply(patch);
+        assert_eq!(config.shell, None);
+    }
+
+    #[test]
+    fn colors_take_hex_only_and_null_resets_them() {
+        let mut config = Config::default();
+        let patch: ConfigPatch =
+            serde_json::from_str(r##"{"focusColor":"#FF8800","finishedColor":"#00cc66"}"##)
+                .expect("patch parses");
+        config.apply(patch);
+        assert_eq!(config.focus_color.as_deref(), Some("#ff8800"));
+        assert_eq!(config.finished_color.as_deref(), Some("#00cc66"));
+
+        let patch: ConfigPatch =
+            serde_json::from_str(r#"{"focusColor":"orange"}"#).expect("patch parses");
+        config.apply(patch);
+        assert_eq!(config.focus_color.as_deref(), Some("#ff8800"));
+
+        let patch: ConfigPatch =
+            serde_json::from_str(r#"{"focusColor":null}"#).expect("patch parses");
+        config.apply(patch);
+        assert_eq!(config.focus_color, None);
+        assert_eq!(config.finished_color.as_deref(), Some("#00cc66"));
+    }
+
+    #[test]
+    fn a_missing_field_leaves_an_optional_setting_alone() {
+        let patch: ConfigPatch = serde_json::from_str(r#"{"fontSize":16}"#).expect("patch parses");
+        let mut config = Config {
+            shell: Some("zsh".into()),
+            ..Config::default()
+        };
+        config.apply(patch);
+        assert_eq!(config.shell.as_deref(), Some("zsh"));
     }
 }

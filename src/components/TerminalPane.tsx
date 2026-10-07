@@ -1,6 +1,13 @@
-import { useEffect, useRef, useState, type MouseEvent, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent, type RefObject } from "react";
+import { errorMessage } from "../lib/appError";
 import { cx } from "../lib/cx";
+import { basename } from "../lib/format";
+import { shortcutLabel } from "../lib/hotkeys";
+import { useSolePopover } from "../lib/popover";
+import { useHotkeyScheme } from "../state/AppProvider";
 import { isClaudeAgent, type PaneView, type WorktreeChip } from "../state/model";
+import { terminalRegistry } from "../terminals/registry";
+import { AgentIcon } from "./AgentIcon";
 import { TaskPopover } from "./TaskPopover";
 import { XtermSurface } from "./XtermSurface";
 
@@ -19,10 +26,22 @@ interface TerminalPaneProps {
   onAskForTask: () => void;
   /** A worktree picked in the branch menu; `newPane` forces a new pane there. */
   onPickWorktree: (worktree: WorktreeChip, newPane: boolean) => void;
+  /** Adds a worktree for the branch and opens a pane in it; rejects with git's reason. */
+  onCreateWorktree: (branch: string) => Promise<void>;
+  onRemoveWorktree: (worktree: WorktreeChip) => void;
   /** Agent CLIs on PATH, offered as launchers while no agent runs. */
   agents: string[];
   onLaunchAgent: (agent: string) => void;
+  onSaveSelection: () => void;
+  onCopySelection: () => void;
+  /** The file name of a note just saved from this pane, while its message shows. */
+  savedNote: string | null;
+  onUndoSave: () => void;
 }
+
+/** Room the selection menu needs, to keep it inside the pane. */
+const MENU_W = 236;
+const MENU_H = 36;
 
 export function TerminalPane({
   view,
@@ -33,8 +52,14 @@ export function TerminalPane({
   onRestart,
   onAskForTask,
   onPickWorktree,
+  onCreateWorktree,
+  onRemoveWorktree,
   agents,
   onLaunchAgent,
+  onSaveSelection,
+  onCopySelection,
+  savedNote,
+  onUndoSave,
 }: TerminalPaneProps) {
   const header = useRef<HTMLDivElement>(null);
   const [taskOpen, setTaskOpen] = useDismissable(header);
@@ -47,6 +72,27 @@ export function TerminalPane({
   useEffect(() => {
     if (!view.canShowTask) setTaskOpen(false);
   }, [view.canShowTask, setTaskOpen]);
+
+  // Releasing a selection offers Save to note and Copy next to the mouse.
+  const body = useRef<HTMLDivElement>(null);
+  const [menu, setMenu] = useState<{ left: number; top: number } | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
+  useEffect(
+    () =>
+      terminalRegistry.onSelectionMenu(view.id, (at) => {
+        const rect = body.current?.getBoundingClientRect();
+        if (!at || !rect) {
+          setMenu(null);
+          return;
+        }
+        const clamp = (value: number, max: number) => Math.max(8, Math.min(value, max));
+        setMenu({
+          left: clamp(at.x - rect.left + 6, rect.width - MENU_W - 8),
+          top: clamp(at.y - rect.top + 12, rect.height - MENU_H - 8),
+        });
+      }),
+    [view.id],
+  );
 
   const toggleTask = (event: MouseEvent) => {
     event.stopPropagation();
@@ -69,7 +115,14 @@ export function TerminalPane({
           <span className="pane__repo ellipsis" title={view.cwd}>
             {view.title}
           </span>
-          {view.branch && <BranchLabel view={view} onPick={onPickWorktree} />}
+          {view.branch && (
+            <BranchLabel
+              view={view}
+              onPick={onPickWorktree}
+              onCreate={onCreateWorktree}
+              onRemove={onRemoveWorktree}
+            />
+          )}
 
           {(view.dirty || view.ahead > 0 || view.behind > 0) && (
             <span className="pane__git">
@@ -102,8 +155,11 @@ export function TerminalPane({
                 "pane__chip--agent",
                 isClaudeAgent(view.agent) && "pane__chip--agent-claude",
               )}
+              role="img"
+              aria-label={`${view.agent} is running`}
+              title={view.agent}
             >
-              {view.agent}
+              <AgentIcon agent={view.agent} size={12} />
             </span>
           )}
 
@@ -135,13 +191,14 @@ export function TerminalPane({
                 key={agent}
                 type="button"
                 className="pane__launch"
+                aria-label={`Run ${agent} in this pane`}
                 title={`Run ${agent} in this pane`}
                 onClick={(event) => {
                   event.stopPropagation();
                   onLaunchAgent(agent);
                 }}
               >
-                {agent}
+                <AgentIcon agent={agent} />
               </button>
             ))}
 
@@ -190,8 +247,42 @@ export function TerminalPane({
         )}
       </div>
 
-      <div className="pane__body">
+      <div className="pane__body" ref={body}>
         <XtermSurface id={view.id} />
+
+        {menu && (
+          <SelectionMenu
+            at={menu}
+            onSave={() => {
+              setMenu(null);
+              onSaveSelection();
+            }}
+            onCopy={() => {
+              setMenu(null);
+              onCopySelection();
+            }}
+            onDismiss={closeMenu}
+          />
+        )}
+
+        {savedNote && (
+          <div className="pane__toast" role="status">
+            <span className="pane__toast-check" aria-hidden="true">
+              ✓
+            </span>
+            Saved to session notes
+            <span className="pane__toast-file ellipsis">{savedNote}</span>
+            <span className="pane__toast-rule" aria-hidden="true" />
+            <button
+              type="button"
+              className="pane__toast-undo"
+              onMouseDown={(event) => event.stopPropagation()}
+              onClick={onUndoSave}
+            >
+              Undo
+            </button>
+          </div>
+        )}
 
         {view.status === "exited" && (
           <div className="pane__exited">
@@ -217,10 +308,11 @@ export function TerminalPane({
 
 /**
  * Open state for a menu or popover that closes on Escape or on a pointer
- * down anywhere outside `root`.
+ * down anywhere outside `root`, and when another popover opens.
  */
 function useDismissable(root: RefObject<HTMLElement | null>) {
   const [open, setOpen] = useState(false);
+  useSolePopover(open, () => setOpen(false));
 
   useEffect(() => {
     if (!open) return;
@@ -262,30 +354,26 @@ const MOVE_HINT: Record<WorktreeChip["move"], string> = {
 };
 
 /**
- * The branch name. Inside a linked worktree a small glyph sits in front of
- * it; once the repo has more than one worktree it opens a menu that moves
- * this pane to another one (Shift+click an entry: always a new pane).
+ * The branch name, which opens the worktree menu: every worktree of the repo
+ * (picking one moves this pane there; Shift+click: always a new pane), a
+ * remove button on linked ones nobody is using, and "New worktree…". Inside
+ * a linked worktree a small glyph sits in front of the branch.
  */
 function BranchLabel({
   view,
   onPick,
+  onCreate,
+  onRemove,
 }: {
   view: PaneView;
   onPick: (worktree: WorktreeChip, newPane: boolean) => void;
+  onCreate: (branch: string) => Promise<void>;
+  onRemove: (worktree: WorktreeChip) => void;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useDismissable(root);
   const current = view.worktrees.find((worktree) => worktree.current);
   const worktreeTitle = view.inWorktree && current ? `Linked worktree · ${current.key}` : null;
-
-  if (view.worktrees.length < 2) {
-    return (
-      <span className="pane__branch" title={worktreeTitle ?? undefined}>
-        {view.inWorktree && <WorktreeGlyph />}
-        <span className="ellipsis">{view.branch}</span>
-      </span>
-    );
-  }
 
   const pick = (worktree: WorktreeChip, newPane: boolean) => {
     setOpen(false);
@@ -299,7 +387,12 @@ function BranchLabel({
         className={cx("pane__branch", "pane__branch--menu", open && "pane__branch--open")}
         aria-haspopup="menu"
         aria-expanded={open}
-        title={[worktreeTitle, `${view.worktrees.length} worktrees · switch`].filter(Boolean).join("\n")}
+        title={[
+          worktreeTitle,
+          view.worktrees.length > 1 ? `${view.worktrees.length} worktrees · switch or add` : "Worktrees · add one",
+        ]
+          .filter(Boolean)
+          .join("\n")}
         onClick={(event) => {
           event.stopPropagation();
           setOpen((value) => !value);
@@ -322,37 +415,131 @@ function BranchLabel({
           <div className="pane__menu-label">Worktrees</div>
           {view.worktrees.map((worktree) => {
             const inert = worktree.move === "here" || worktree.move === "none";
+            // Never pull a folder out from under a pane, and leave locks to git.
+            const removable = !worktree.main && !worktree.current && !worktree.openIn && !worktree.locked;
             return (
-              <button
-                key={worktree.key}
-                type="button"
-                role="menuitem"
-                className={cx(
-                  "pane__menu-item",
-                  "pane__worktree-item",
-                  worktree.current && "pane__worktree-item--current",
-                  worktree.prunable && "pane__worktree-item--prunable",
+              <div key={worktree.key} className="pane__worktree-row">
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={cx(
+                    "pane__menu-item",
+                    "pane__worktree-item",
+                    worktree.current && "pane__worktree-item--current",
+                    worktree.prunable && "pane__worktree-item--prunable",
+                  )}
+                  disabled={inert}
+                  title={inert ? worktree.key : `${worktree.key}\nShift+click: open in a new pane`}
+                  onClick={(event) => pick(worktree, event.shiftKey)}
+                >
+                  <span className="pane__worktree-mark" aria-hidden="true" />
+                  <span className="pane__worktree-name ellipsis">{worktree.name}</span>
+                  {worktree.main && worktree.name !== "main" && <span className="pane__worktree-tag">main</span>}
+                  {worktree.locked && <span title="Locked">🔒</span>}
+                  <span className="spacer" />
+                  <span className="pane__menu-hint">
+                    {worktree.move === "focus" && worktree.paneNumber !== null
+                      ? `pane ${worktree.paneNumber}`
+                      : MOVE_HINT[worktree.move]}
+                  </span>
+                </button>
+                {removable && (
+                  <button
+                    type="button"
+                    className="pane__worktree-remove"
+                    aria-label={`Remove worktree ${worktree.name}`}
+                    title="Remove this worktree (the branch stays)"
+                    onClick={() => {
+                      setOpen(false);
+                      onRemove(worktree);
+                    }}
+                  >
+                    ×
+                  </button>
                 )}
-                disabled={inert}
-                title={inert ? worktree.key : `${worktree.key}\nShift+click: open in a new pane`}
-                onClick={(event) => pick(worktree, event.shiftKey)}
-              >
-                <span className="pane__worktree-mark" aria-hidden="true" />
-                <span className="pane__worktree-name ellipsis">{worktree.name}</span>
-                {worktree.main && worktree.name !== "main" && <span className="pane__worktree-tag">main</span>}
-                {worktree.locked && <span title="Locked">🔒</span>}
-                <span className="spacer" />
-                <span className="pane__menu-hint">
-                  {worktree.move === "focus" && worktree.paneNumber !== null
-                    ? `pane ${worktree.paneNumber}`
-                    : MOVE_HINT[worktree.move]}
-                </span>
-              </button>
+              </div>
             );
           })}
+          <span className="pane__menu-rule" aria-hidden="true" />
+          <NewWorktree
+            mainKey={view.worktrees.find((worktree) => worktree.main)?.key ?? null}
+            onCreate={async (branch) => {
+              await onCreate(branch);
+              setOpen(false);
+            }}
+          />
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * "New worktree…" at the foot of the worktree menu. It opens into a branch
+ * name field; Enter creates the worktree next to the main checkout and opens
+ * a pane in it. git's refusal (a bad name, a branch checked out elsewhere)
+ * shows under the field.
+ */
+function NewWorktree({ mainKey, onCreate }: { mainKey: string | null; onCreate: (branch: string) => Promise<void> }) {
+  const [editing, setEditing] = useState(false);
+  const [branch, setBranch] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        role="menuitem"
+        className="pane__menu-item"
+        title="An existing branch is checked out; a new name branches from this pane's HEAD"
+        onClick={() => setEditing(true)}
+      >
+        <span>New worktree…</span>
+        <span className="pane__menu-hint">new pane</span>
+      </button>
+    );
+  }
+
+  const name = branch.trim();
+  // Mirrors the backend: `app` and `feature/x` give `app-feature-x` beside it.
+  const folder = mainKey && name ? `${basename(mainKey)}-${name.replace(/[\\/\s]/g, "-")}` : null;
+
+  return (
+    <form
+      className="pane__worktree-new"
+      onSubmit={async (event) => {
+        event.preventDefault();
+        if (!name || busy) return;
+        setBusy(true);
+        setError(null);
+        try {
+          await onCreate(name);
+        } catch (failure) {
+          setError(errorMessage(failure));
+          setBusy(false);
+        }
+      }}
+    >
+      <input
+        className="pane__worktree-input"
+        aria-label="Branch for the new worktree"
+        placeholder="branch name"
+        autoFocus
+        spellCheck={false}
+        autoCapitalize="off"
+        autoCorrect="off"
+        value={branch}
+        disabled={busy}
+        onChange={(event) => {
+          setBranch(event.target.value);
+          setError(null);
+        }}
+      />
+      <div className={cx("pane__worktree-note", error && "pane__worktree-note--error")} role={error ? "alert" : undefined}>
+        {error ?? (busy ? "Creating…" : folder ? `../${folder} · Enter to create` : "Existing or new branch")}
+      </div>
+    </form>
   );
 }
 
@@ -399,6 +586,76 @@ function OpenFromButton({ n, onOpenFrom }: { n: number; onOpenFrom: (how: OpenFr
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Save to note and Copy for the text just selected (design turn 7). Goes on
+ * Escape, a click elsewhere or typing (the registry reports that one).
+ */
+function SelectionMenu({
+  at,
+  onSave,
+  onCopy,
+  onDismiss,
+}: {
+  at: { left: number; top: number };
+  onSave: () => void;
+  onCopy: () => void;
+  onDismiss: () => void;
+}) {
+  const root = useRef<HTMLDivElement>(null);
+  const scheme = useHotkeyScheme();
+
+  useEffect(() => {
+    const onPointerDown = (event: PointerEvent) => {
+      if (!root.current?.contains(event.target as Node | null)) onDismiss();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onDismiss();
+    };
+    window.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, [onDismiss]);
+
+  return (
+    <div
+      className="pane__selection-menu"
+      ref={root}
+      role="menu"
+      aria-label="Selection"
+      style={{ left: at.left, top: at.top }}
+      // Keep the terminal's focus and selection while a button is pressed.
+      onMouseDown={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+    >
+      <button
+        type="button"
+        role="menuitem"
+        className="pane__selection-item pane__selection-item--save"
+        title="Save selection as a note linked to this session"
+        onClick={onSave}
+      >
+        Save to note
+        <span className="pane__selection-key">{shortcutLabel(scheme, "save-note")}</span>
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        className="pane__selection-item"
+        title="Copy to clipboard"
+        onClick={onCopy}
+      >
+        Copy
+        <span className="pane__selection-key">{shortcutLabel(scheme, "copy")}</span>
+      </button>
     </div>
   );
 }

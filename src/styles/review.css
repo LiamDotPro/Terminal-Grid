@@ -32,7 +32,9 @@
 
 /* Layout --------------------------------------------------------------------- */
 
-.focus {
+/* Not `.focus`: xterm puts that class on its own element while it has focus,
+   which pulled every focused terminal into this layout. */
+.focus-mode {
   position: absolute;
   inset: 0;
   margin: var(--grid-pad);
@@ -41,15 +43,27 @@
   gap: var(--grid-gap);
 }
 
-.focus__terminal,
-.focus__review {
+.focus-mode__left {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--grid-gap);
+}
+
+.focus-mode__terminal {
+  flex: 1;
+}
+
+.focus-mode__terminal,
+.focus-mode__review {
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
 
-.focus__terminal > .pane {
+.focus-mode__terminal > .pane {
   flex: 1;
 }
 
@@ -75,8 +89,8 @@
 }
 
 .review--active {
-  border-color: var(--accent);
-  outline-color: var(--accent);
+  border-color: rgb(var(--focus-rgb));
+  outline-color: rgb(var(--focus-rgb));
   box-shadow: var(--ring-focus);
 }
 
@@ -100,11 +114,6 @@
   background: var(--header-wash);
   border-bottom: 1px solid var(--hair);
   white-space: nowrap;
-}
-
-.review__title {
-  font-size: 13px;
-  font-weight: 600;
 }
 
 .review__repo {
@@ -605,6 +614,211 @@
 
 .review__seg-item:disabled {
   cursor: default;
+}
+
+/* Review / Edit, the panel's top switch (turn 5). */
+.review__seg--mode {
+  padding: 3px;
+  border-radius: 9px;
+  border-color: rgb(var(--ink-rgb) / 0.12);
+}
+
+.review__seg--mode .review__seg-item {
+  padding: 3px 14px;
+  border-radius: 6px;
+  font-size: 12.5px;
+}
+
+.review__seg--fill .review__seg-item {
+  flex: 1;
+  padding: 3px 8px;
+}
+
+/* Edit tree ---------------------------------------------------------------------- */
+
+.review__tree-tools {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+}
+
+.review__stepper {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 32px;
+  align-items: center;
+  height: 30px;
+  border-radius: 8px;
+  background: rgb(var(--warn-rgb) / 0.07);
+  border: 1px solid rgb(var(--warn-rgb) / 0.3);
+}
+
+.review__stepper--none {
+  background: var(--fill-1);
+  border-color: rgb(var(--ink-rgb) / 0.1);
+}
+
+.review__stepper-btn {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: var(--warn-soft);
+}
+
+.review__stepper-btn:first-child {
+  border-radius: 7px 0 0 7px;
+}
+
+.review__stepper-btn:last-child {
+  border-radius: 0 7px 7px 0;
+}
+
+.review__stepper-btn:hover:not(:disabled) {
+  background: rgb(var(--warn-rgb) / 0.18);
+  color: var(--text-strong);
+}
+
+.review__stepper-btn:disabled {
+  color: var(--text-28);
+  cursor: default;
+}
+
+.review__stepper-label {
+  text-align: center;
+  font-size: 12px;
+  color: var(--warn-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.review__stepper--none .review__stepper-label {
+  color: var(--text-50);
+}
+
+.review__stepper-label b {
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.review__tree {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 6px 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border-top: 1px solid var(--hair-soft);
+}
+
+.review__tree-row {
+  flex: none;
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding-right: 8px;
+  border-radius: 7px;
+  text-align: left;
+  font-size: 12.5px;
+  color: var(--text-55);
+}
+
+.review__tree-row:hover {
+  background: var(--fill-2);
+}
+
+.review__tree-row--folder {
+  font-weight: 600;
+}
+
+.review__tree-row--has-changes {
+  color: rgb(var(--text-rgb) / 0.92);
+}
+
+.review__tree-row--modified,
+.review__tree-row--renamed {
+  font-weight: 500;
+  color: var(--warn-soft);
+}
+
+.review__tree-row--added,
+.review__tree-row--untracked {
+  font-weight: 500;
+  color: var(--ok-soft);
+}
+
+.review__tree-row--deleted {
+  font-weight: 500;
+  color: var(--del);
+}
+
+.review__tree-row--selected,
+.review__tree-row--selected:hover {
+  background: rgb(var(--accent-rgb) / 0.14);
+  box-shadow: inset 0 0 0 1px rgb(var(--accent-rgb) / 0.45);
+  color: var(--text-strong);
+}
+
+.review__tree-glyph {
+  font-size: 9.5px;
+  text-align: center;
+  color: var(--text-45);
+}
+
+.review__tree-name {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.review__tree-unsaved {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.review__tree-status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.review__tree-row--modified .review__tree-status,
+.review__tree-row--renamed .review__tree-status {
+  color: var(--mod);
+}
+
+.review__tree-row--added .review__tree-status,
+.review__tree-row--untracked .review__tree-status {
+  color: var(--ok);
+}
+
+.review__tree-row--deleted .review__tree-status {
+  color: var(--del);
+}
+
+.review__tree-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--warn);
+}
+
+.review__tree-count {
+  font-weight: 500;
+  color: var(--warn-soft);
 }
 
 .review__notice {

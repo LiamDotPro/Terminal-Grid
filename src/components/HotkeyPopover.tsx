@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { hotkeyHints, modifierLabel } from "../lib/hotkeys";
+import { useSolePopover } from "../lib/popover";
 import { useAppActions, useHotkeyScheme } from "../state/AppProvider";
 
 /** The hotkey cheat sheet from screen 1d. Dismisses on Escape or a click outside. */
@@ -7,6 +8,8 @@ export function HotkeyPopover() {
   const scheme = useHotkeyScheme();
   const actions = useAppActions();
   const root = useRef<HTMLDivElement>(null);
+  // Mounted only while open.
+  useSolePopover(true, () => actions.setHotkeysOpen(false));
 
   useEffect(() => {
     const onPointerDown = (event: PointerEvent) => {

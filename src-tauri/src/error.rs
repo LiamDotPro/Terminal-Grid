@@ -15,7 +15,10 @@ pub enum AppError {
     OutsideRoot { message: String },
     #[error("file changed on disk")]
     #[serde(rename_all = "camelCase")]
-    Conflict { message: String, current_mtime_ms: u64 },
+    Conflict {
+        message: String,
+        current_mtime_ms: u64,
+    },
     #[error("invalid name: {message}")]
     InvalidName { message: String },
     #[error("git timed out")]
@@ -26,7 +29,9 @@ pub enum AppError {
 
 impl From<std::io::Error> for AppError {
     fn from(e: std::io::Error) -> Self {
-        AppError::Io { message: e.to_string() }
+        AppError::Io {
+            message: e.to_string(),
+        }
     }
 }
 

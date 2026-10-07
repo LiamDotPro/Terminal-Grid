@@ -172,6 +172,58 @@
 
 /* Segmented choice ----------------------------------------------------- */
 
+.color-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+}
+
+.color-pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-85);
+}
+
+.color-pick__swatch {
+  position: relative;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  border: 1px solid rgb(var(--ink-rgb) / 0.22);
+  box-shadow: inset 0 0 0 2px rgb(0 0 0 / 0.25);
+  cursor: pointer;
+  flex: none;
+}
+
+.color-pick__swatch:focus-within {
+  outline: 2px solid rgb(var(--ink-rgb) / 0.5);
+  outline-offset: 2px;
+}
+
+/* The native input stays clickable over the swatch but draws nothing. */
+.color-pick__input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.color-pick__reset {
+  font-size: 11.5px;
+  color: var(--text-50);
+  padding: 2px 6px;
+  border-radius: 5px;
+}
+
+.color-pick__reset:hover {
+  background: var(--fill-hover);
+  color: var(--text-strong);
+}
+
 .segmented {
   display: inline-flex;
   width: max-content;

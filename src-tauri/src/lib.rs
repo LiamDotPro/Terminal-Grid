@@ -3,11 +3,14 @@
 pub mod agent;
 pub mod error;
 pub mod git;
+mod glass;
 #[cfg(target_os = "macos")]
 mod menu;
 pub mod notes;
 pub mod pty;
 pub mod state;
+#[cfg(target_os = "macos")]
+mod traffic_lights;
 
 pub use error::AppError;
 
@@ -96,6 +99,11 @@ pub fn run() {
             }
             start_git_sweep(handle.clone());
 
+            #[cfg(target_os = "macos")]
+            if let Some(window) = app.get_webview_window("main") {
+                traffic_lights::watch(&window.as_ref().window());
+            }
+
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -123,7 +131,10 @@ pub fn run() {
             // git
             git::get_git_info,
             git::refresh_git_info,
+            git::worktree::worktree_create,
+            git::worktree::worktree_remove,
             git::review::review_status,
+            git::review::review_files,
             git::review::review_file,
             git::review::review_stage,
             git::review::review_unstage,
@@ -143,6 +154,8 @@ pub fn run() {
             state::config_set,
             state::session_get,
             state::session_set,
+            // window
+            glass::set_window_glass,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Terminal Grid");

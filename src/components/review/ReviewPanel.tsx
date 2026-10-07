@@ -4,6 +4,7 @@ import type { ChangedFile, ChangeStatus, FileVersions, ReviewStatus, TerminalId 
 import { errorMessage } from "../../lib/appError";
 import { cx } from "../../lib/cx";
 import { diffLines, splitLines } from "../../lib/diff";
+import { ancestorsOf, changedInTreeOrder, treeRows, type FileChange, type TreeRow } from "../../lib/fileTree";
 import { shortcutLabel } from "../../lib/hotkeys";
 import { clockTime, indentOf, languageOf, lineEndingOf, splitPath } from "../../lib/review";
 import { commentStyle } from "../../lib/syntax";
@@ -47,11 +48,17 @@ const STATUS_TITLE: Record<ChangeStatus, string> = {
   "!": "Conflict",
 };
 
+/** A file of the repository without changes, opened from the edit tree. */
+function unchangedFile(path: string): ChangedFile {
+  return { path, oldPath: null, status: "M", additions: null, deletions: null, binary: false };
+}
+
 /**
- * The review panel of focus mode (design turns 2 to 4): the pane's
+ * The review panel of focus mode (design turns 2 to 5): the pane's
  * repository split into staged and unstaged files, a diff of the selected
- * file that takes line comments, an editor over the file on disk, and the
- * tray that sends the comments to the pane's agent.
+ * file that takes line comments, the tray that sends the comments to the
+ * pane's agent, and Edit, which swaps the file list for the whole folder and
+ * opens any file in an editor over the file on disk.
  */
 export function ReviewPanel({
   id,
@@ -83,6 +90,11 @@ export function ReviewPanel({
   const [committed, setCommitted] = useState<{ headShort: string; cleared: number } | null>(null);
   const [cursorPos, setCursorPos] = useState("");
   const [busy, setBusy] = useState(false);
+  // Edit mode: the repository's files, the one open, and how the tree shows.
+  const [files, setFiles] = useState<string[] | null>(null);
+  const [editPath, setEditPath] = useState<string | null>(null);
+  const [treeFilter, setTreeFilter] = useState<"all" | "changed">("all");
+  const [openFolders, setOpenFolders] = useState<ReadonlyMap<string, boolean>>(new Map());
 
   // Status ------------------------------------------------------------------------
 
@@ -162,10 +174,99 @@ export function ReviewPanel({
     setCursorPos("");
   }, []);
 
+  // Edit tree -----------------------------------------------------------------------
+
+  const editing = mode === "edit";
+
+  // Read the folder on entering Edit, and again whenever git's view changes.
+  useEffect(() => {
+    if (!editing || !status) return;
+    let cancelled = false;
+    actions
+      .repoFiles(id)
+      .then((next) => {
+        if (!cancelled) setFiles((previous) => (previous && sameList(previous, next) ? previous : next));
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setFailure(errorMessage(error));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [actions, id, editing, status]);
+
+  const changes = useMemo(() => {
+    const map = new Map<string, FileChange>();
+    for (const entry of entries) {
+      if (!map.has(entry.file.path)) map.set(entry.file.path, { status: entry.file.status, staged: entry.staged });
+    }
+    return map;
+  }, [entries]);
+  const changedOrder = useMemo(() => changedInTreeOrder(files ?? [], changes), [files, changes]);
+  const rows = useMemo(
+    () => (files ? treeRows(files, changes, openFolders, treeFilter) : []),
+    [files, changes, openFolders, treeFilter],
+  );
+
+  // What Edit has open: the changed file's entry (keeping the side the review
+  // had selected), or a file without changes.
+  const editTarget: Entry | null =
+    editing && editPath
+      ? current?.file.path === editPath
+        ? current
+        : (entries.find((entry) => entry.file.path === editPath) ?? { file: unchangedFile(editPath), staged: false })
+      : null;
+  const shown = editing ? editTarget : current;
+  const shownChanged = shown !== null && changes.has(shown.file.path);
+
+  const openInEditor = useCallback((path: string) => {
+    setEditPath(path);
+    setCursorPos("");
+    // The folders above it open, so the tree shows where it is.
+    setOpenFolders((open) => {
+      const closed = ancestorsOf(path).filter((folder) => open.get(folder) === false);
+      if (closed.length === 0) return open;
+      const next = new Map(open);
+      for (const folder of closed) next.set(folder, true);
+      return next;
+    });
+  }, []);
+
+  const stepChanged = (delta: 1 | -1) => {
+    if (changedOrder.length === 0) return;
+    const index = editPath ? changedOrder.indexOf(editPath) : -1;
+    const next =
+      index === -1
+        ? delta === 1
+          ? 0
+          : changedOrder.length - 1
+        : (index + delta + changedOrder.length) % changedOrder.length;
+    openInEditor(changedOrder[next]!);
+  };
+
+  const switchMode = (next: "review" | "edit") => {
+    if (next === mode) return;
+    if (next === "edit") {
+      const start = current?.file.path ?? changedOrder[0] ?? null;
+      if (start) openInEditor(start);
+      else setEditPath(null);
+    } else if (editPath) {
+      // Back in Review, a changed file stays selected.
+      const entry = entries.find((candidate) => candidate.file.path === editPath);
+      if (entry) setSelection({ path: entry.file.path, staged: entry.staged });
+    }
+    setMode(next);
+  };
+
+  const toggleFolder = (row: TreeRow) => {
+    if (treeFilter === "changed") return;
+    setOpenFolders((open) => new Map(open).set(row.path, !row.open));
+  };
+
   // File versions -------------------------------------------------------------------
 
-  const currentFile = current?.file ?? null;
-  const currentStaged = current?.staged ?? false;
+  const currentFile = shown?.file ?? null;
+  const currentStaged = shown?.staged ?? false;
   const fileKey = currentFile ? `${currentStaged ? "staged" : "unstaged"}:${currentFile.path}` : null;
 
   useEffect(() => {
@@ -194,14 +295,13 @@ export function ReviewPanel({
   }, [actions, id, fileKey]);
 
   const canEdit = versions !== null && versions.disk !== null && !versions.binary && !versions.tooLarge;
-  const editing = mode === "edit" && canEdit;
   const shownView = editing ? "file" : view;
 
   useEffect(() => {
     if (!editing) setCursorPos("");
   }, [editing]);
 
-  const rows = useMemo(
+  const diffRows = useMemo(
     () => (versions ? diffLines(splitLines(versions.old ?? ""), splitLines(versions.new ?? "")) : []),
     [versions],
   );
@@ -253,6 +353,19 @@ export function ReviewPanel({
   // Keyboard ------------------------------------------------------------------------------
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    // Alt+↑ / Alt+↓ walk the changed files in Edit, from the editor too.
+    if (
+      editing &&
+      event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.shiftKey &&
+      (event.key === "ArrowUp" || event.key === "ArrowDown")
+    ) {
+      event.preventDefault();
+      stepChanged(event.key === "ArrowDown" ? 1 : -1);
+      return;
+    }
     const target = event.target as HTMLElement;
     if (target.closest("textarea, input")) return;
     if (event.ctrlKey || event.altKey || event.metaKey) return;
@@ -260,6 +373,16 @@ export function ReviewPanel({
     switch (event.key) {
       case "ArrowDown":
       case "ArrowUp": {
+        if (editing) {
+          const fileRows = rows.filter((row) => row.kind === "file");
+          if (fileRows.length === 0) return;
+          event.preventDefault();
+          const index = fileRows.findIndex((row) => row.path === editPath);
+          const step = event.key === "ArrowDown" ? 1 : -1;
+          const next = fileRows[index === -1 ? 0 : (index + step + fileRows.length) % fileRows.length];
+          if (next) openInEditor(next.path);
+          return;
+        }
         if (entries.length === 0) return;
         event.preventDefault();
         const index = current ? entries.indexOf(current) : -1;
@@ -280,9 +403,8 @@ export function ReviewPanel({
         break;
       case "e":
       case "E":
-        if (!canEdit) return;
         event.preventDefault();
-        setMode((value) => (value === "edit" ? "review" : "edit"));
+        switchMode(editing ? "review" : "edit");
         break;
       case "c":
       case "C":
@@ -294,6 +416,9 @@ export function ReviewPanel({
         if (trayOpen) {
           event.preventDefault();
           setTrayOpen(false);
+        } else if (editing) {
+          event.preventDefault();
+          switchMode("review");
         }
         break;
     }
@@ -319,7 +444,10 @@ export function ReviewPanel({
       aria-label={`Review for pane ${paneNumber}`}
     >
       <div className="review__head">
-        <span className="review__title">Review</span>
+        <div className="review__seg review__seg--mode" role="radiogroup" aria-label="Mode" title="Review / Edit (E)">
+          <SegButton label="Review" on={!editing} onClick={() => switchMode("review")} />
+          <SegButton label="Edit" on={editing} onClick={() => switchMode("edit")} />
+        </div>
         {term?.git?.repoName && <span className="review__repo">{term.git.repoName}</span>}
         {(status?.branch ?? status?.headShort) && (
           <span className="review__branch">{status?.branch ?? status?.headShort}</span>
@@ -377,50 +505,73 @@ export function ReviewPanel({
       ) : (
         <div className="review__body">
           <aside className="review__side">
-            <div className="review__groups">
-              {entries.length === 0 && (
-                <div className="review__empty">
-                  <div className="review__empty-title">Nothing to review</div>
-                  The working tree is clean.
-                </div>
-              )}
-              {status.staged.length > 0 && (
-                <FileGroup
-                  title="Staged"
-                  files={status.staged}
-                  staged
-                  action="Unstage all"
-                  onAction={() => void stageOrUnstage(status.staged, true)}
-                  current={current}
-                  counts={commentCounts}
-                  drafts={(path) => hasDraft(draftKeyFor(path))}
-                  onSelect={select}
-                />
-              )}
-              {status.unstaged.length > 0 && (
-                <FileGroup
-                  title="Unstaged"
-                  note="Stage a file to comment on it"
-                  files={status.unstaged}
-                  staged={false}
-                  action="Stage all"
-                  onAction={() => void stageOrUnstage(status.unstaged, false)}
-                  current={current}
-                  counts={new Map()}
-                  drafts={(path) => hasDraft(draftKeyFor(path))}
-                  onSelect={select}
-                />
-              )}
-            </div>
+            {editing ? (
+              <EditTree
+                rows={rows}
+                loading={files === null}
+                filter={treeFilter}
+                onFilter={setTreeFilter}
+                changedCount={changedOrder.length}
+                changedIndex={editPath ? changedOrder.indexOf(editPath) : -1}
+                onStep={stepChanged}
+                selected={editPath}
+                drafts={(path) => hasDraft(draftKeyFor(path))}
+                onOpen={(row) => (row.kind === "folder" ? toggleFolder(row) : openInEditor(row.path))}
+              />
+            ) : (
+              <div className="review__groups">
+                {entries.length === 0 && (
+                  <div className="review__empty">
+                    <div className="review__empty-title">Nothing to review</div>
+                    The working tree is clean.
+                  </div>
+                )}
+                {status.staged.length > 0 && (
+                  <FileGroup
+                    title="Staged"
+                    files={status.staged}
+                    staged
+                    action="Unstage all"
+                    onAction={() => void stageOrUnstage(status.staged, true)}
+                    current={current}
+                    counts={commentCounts}
+                    drafts={(path) => hasDraft(draftKeyFor(path))}
+                    onSelect={select}
+                  />
+                )}
+                {status.unstaged.length > 0 && (
+                  <FileGroup
+                    title="Unstaged"
+                    note="Stage a file to comment on it"
+                    files={status.unstaged}
+                    staged={false}
+                    action="Stage all"
+                    onAction={() => void stageOrUnstage(status.unstaged, false)}
+                    current={current}
+                    counts={new Map()}
+                    drafts={(path) => hasDraft(draftKeyFor(path))}
+                    onSelect={select}
+                  />
+                )}
+              </div>
+            )}
             <div className="review__hints">
-              {[
-                ["↑↓", "file"],
-                ["N", "next change"],
-                ["F", "whole file"],
-                ["E", "edit"],
-                ["C", "comment"],
-                [back, "back to grid"],
-              ].map(([key, label]) => (
+              {(editing
+                ? [
+                    ["Alt+↑↓", "changed file"],
+                    [shortcutLabel(scheme, "save"), "save"],
+                    ["Esc", "review"],
+                    [back, "back to grid"],
+                  ]
+                : [
+                    ["↑↓", "file"],
+                    ["N", "next change"],
+                    ["F", "whole file"],
+                    ["E", "edit"],
+                    ["C", "comment"],
+                    [back, "back to grid"],
+                  ]
+              ).map(([key, label]) => (
                 <span key={key} className="review__hint">
                   <span className="review__key">{key}</span>
                   {label}
@@ -430,23 +581,22 @@ export function ReviewPanel({
           </aside>
 
           <section className="review__main">
-            {current ? (
+            {shown ? (
               <>
                 <FileToolbar
-                  entry={current}
+                  entry={shown}
+                  changed={shownChanged}
                   editing={editing}
                   view={shownView}
-                  canEdit={canEdit}
                   busy={busy}
                   onView={(next) => {
-                    setMode("review");
+                    switchMode("review");
                     setView(next);
                   }}
-                  onMode={setMode}
-                  onStage={() => void stageOrUnstage([current.file], current.staged)}
+                  onStage={() => void stageOrUnstage([shown.file], shown.staged)}
                 />
 
-                {!current.staged && !editing && (
+                {!shown.staged && !editing && (
                   <div className="review__notice">
                     <span className="spacer">
                       Unstaged changes can't take comments. Stage the file to comment on it.
@@ -455,7 +605,7 @@ export function ReviewPanel({
                       type="button"
                       className="review-btn review-btn--strong"
                       disabled={busy}
-                      onClick={() => void stageOrUnstage([current.file], false)}
+                      onClick={() => void stageOrUnstage([shown.file], false)}
                     >
                       Stage
                     </button>
@@ -468,17 +618,19 @@ export function ReviewPanel({
                   <div className="review__message">Binary file, not shown.</div>
                 ) : versions.tooLarge ? (
                   <div className="review__message">This file is too large to show.</div>
+                ) : editing && !canEdit ? (
+                  <div className="review__message">This file was deleted, so there is nothing to edit.</div>
                 ) : editing ? (
                   <FileEditor
                     key={`${fileKey}`}
-                    draftKey={draftKeyFor(current.file.path)}
-                    style={commentStyle(current.file.path)}
+                    draftKey={draftKeyFor(shown.file.path)}
+                    style={commentStyle(shown.file.path)}
                     base={versions.old ?? ""}
                     disk={versions.disk ?? ""}
                     diskMtimeMs={versions.diskMtimeMs}
-                    staged={current.staged}
+                    staged={shown.staged}
                     commentLines={commentLines}
-                    save={(content, expected) => actions.writeReviewFile(id, current.file.path, content, expected)}
+                    save={(content, expected) => actions.writeReviewFile(id, shown.file.path, content, expected)}
                     onSaved={() => void refresh()}
                     onCursor={setCursorPos}
                     onLeave={() => root.current?.focus()}
@@ -487,10 +639,10 @@ export function ReviewPanel({
                   <DiffView
                     key={`${fileKey}`}
                     ref={diff}
-                    rows={rows}
+                    rows={diffRows}
                     view={shownView}
-                    style={commentStyle(current.file.path)}
-                    commentable={current.staged && versions.new !== null}
+                    style={commentStyle(shown.file.path)}
+                    commentable={shown.staged && versions.new !== null}
                     comments={fileComments}
                     newLines={newLines}
                     author={author}
@@ -498,7 +650,7 @@ export function ReviewPanel({
                     onAdd={(row, text) =>
                       actions.addComment({
                         repoRoot: status.repoRoot,
-                        path: current.file.path,
+                        path: shown.file.path,
                         line: row.new ?? 1,
                         lineText: row.text,
                         text,
@@ -527,7 +679,7 @@ export function ReviewPanel({
                   )}
                   <span className="spacer" />
                   {editing && cursorPos && <span className="review__cursor">{cursorPos}</span>}
-                  <span>{languageOf(current.file.path)}</span>
+                  <span>{languageOf(shown.file.path)}</span>
                   <span>{fileMeta.eol}</span>
                   <span>UTF-8</span>
                   <span>{fileMeta.indent}</span>
@@ -535,7 +687,7 @@ export function ReviewPanel({
               </>
             ) : (
               <div className="review__message review__message--center">
-                {entries.length === 0 ? "No changes in this repository." : "Pick a file."}
+                {editing ? "Pick a file." : entries.length === 0 ? "No changes in this repository." : "Pick a file."}
               </div>
             )}
           </section>
@@ -639,33 +791,33 @@ function FileGroup({
 
 function FileToolbar({
   entry,
+  changed,
   editing,
   view,
-  canEdit,
   busy,
   onView,
-  onMode,
   onStage,
 }: {
   entry: Entry;
+  /** False for a file without changes, opened from the edit tree. */
+  changed: boolean;
   editing: boolean;
   view: "changes" | "file";
-  canEdit: boolean;
   busy: boolean;
   onView: (view: "changes" | "file") => void;
-  onMode: (mode: "review" | "edit") => void;
   onStage: () => void;
 }) {
   const { dir, name } = splitPath(entry.file.path);
-  const state = editing ? `${entry.staged ? "Staged" : "Unstaged"} · editing` : entry.staged ? "Staged" : "Unstaged";
+  const side = entry.staged ? "Staged" : "Unstaged";
+  const state = editing ? (changed ? `${side} · editing` : "Editing") : side;
   return (
     <div className="review__toolbar">
       <div className="review__path ellipsis" title={entry.file.path}>
         {dir && <span className="review__path-dir">{dir}/</span>}
         <span className="review__path-name">{name}</span>
       </div>
-      {entry.file.additions ? <span className="review__add">+{entry.file.additions}</span> : null}
-      {entry.file.deletions ? <span className="review__del">−{entry.file.deletions}</span> : null}
+      {changed && entry.file.additions ? <span className="review__add">+{entry.file.additions}</span> : null}
+      {changed && entry.file.deletions ? <span className="review__del">−{entry.file.deletions}</span> : null}
       <span
         className={cx(
           "review__state",
@@ -679,16 +831,139 @@ function FileToolbar({
         <SegButton label="Changes" on={view === "changes"} dim={editing} onClick={() => onView("changes")} />
         <SegButton label="Whole file" on={view === "file"} onClick={() => onView("file")} />
       </div>
-      <div className="review__seg" role="radiogroup" aria-label="Mode" title="E">
-        <SegButton label="Review" on={!editing} onClick={() => onMode("review")} />
-        <SegButton label="Edit" on={editing} dim={!canEdit} disabled={!canEdit} onClick={() => onMode("edit")} />
-      </div>
       {!editing && (
         <button type="button" className="review-btn" disabled={busy} onClick={onStage}>
           {entry.staged ? "Unstage" : "Stage"}
         </button>
       )}
     </div>
+  );
+}
+
+/**
+ * Edit's side (screen 5a): All files or only the changed ones, a bar that
+ * steps through the changed files, and the folder tree. Changed files are
+ * tinted with their status letter, folders holding changes show a count.
+ */
+function EditTree({
+  rows,
+  loading,
+  filter,
+  onFilter,
+  changedCount,
+  changedIndex,
+  onStep,
+  selected,
+  drafts,
+  onOpen,
+}: {
+  rows: TreeRow[];
+  loading: boolean;
+  filter: "all" | "changed";
+  onFilter: (filter: "all" | "changed") => void;
+  changedCount: number;
+  changedIndex: number;
+  onStep: (delta: 1 | -1) => void;
+  selected: string | null;
+  drafts: (path: string) => boolean;
+  onOpen: (row: TreeRow) => void;
+}) {
+  const list = useRef<HTMLDivElement>(null);
+
+  // Keep the open file in view when the stepper or the keyboard moves it.
+  useEffect(() => {
+    list.current?.querySelector<HTMLElement>(".review__tree-row--selected")?.scrollIntoView({ block: "nearest" });
+  }, [selected, rows]);
+
+  return (
+    <>
+      <div className="review__tree-tools">
+        <div className="review__seg review__seg--fill" role="radiogroup" aria-label="Files">
+          <SegButton label="All files" on={filter === "all"} onClick={() => onFilter("all")} />
+          <SegButton label={`Changed · ${changedCount}`} on={filter === "changed"} onClick={() => onFilter("changed")} />
+        </div>
+        <div className={cx("review__stepper", changedCount === 0 && "review__stepper--none")}>
+          <button
+            type="button"
+            className="review__stepper-btn"
+            title="Previous changed file (Alt+↑)"
+            aria-label="Previous changed file"
+            disabled={changedCount === 0}
+            onClick={() => onStep(-1)}
+          >
+            ↑
+          </button>
+          <span className="review__stepper-label">
+            {changedCount === 0 ? (
+              "No changed files"
+            ) : (
+              <>
+                Changed file <b>{changedIndex === -1 ? "–" : changedIndex + 1}</b> of {changedCount}
+              </>
+            )}
+          </span>
+          <button
+            type="button"
+            className="review__stepper-btn"
+            title="Next changed file (Alt+↓)"
+            aria-label="Next changed file"
+            disabled={changedCount === 0}
+            onClick={() => onStep(1)}
+          >
+            ↓
+          </button>
+        </div>
+      </div>
+      <div className="review__tree" ref={list} role="tree" aria-label="Files">
+        {loading && <div className="review__message">Reading files…</div>}
+        {!loading && rows.length === 0 && (
+          <div className="review__message">{filter === "changed" ? "No changed files." : "No files."}</div>
+        )}
+        {rows.map((row) => {
+          const status = row.change ? STATUS_LABEL[row.change.status] : "";
+          return (
+            <button
+              key={`${row.kind}:${row.path}`}
+              type="button"
+              role="treeitem"
+              aria-expanded={row.kind === "folder" ? row.open : undefined}
+              aria-selected={row.kind === "file" ? row.path === selected : undefined}
+              className={cx(
+                "review__tree-row",
+                row.kind === "folder" && "review__tree-row--folder",
+                row.kind === "folder" && row.count > 0 && "review__tree-row--has-changes",
+                row.change && `review__tree-row--${statusClass(row.change.status)}`,
+                row.path === selected && row.kind === "file" && "review__tree-row--selected",
+              )}
+              style={{ paddingLeft: 6 + row.depth * 14 }}
+              title={
+                row.change
+                  ? `${STATUS_TITLE[row.change.status]} · ${row.change.staged ? "staged" : "unstaged"}`
+                  : row.path
+              }
+              onClick={() => onOpen(row)}
+            >
+              <span className="review__tree-glyph" aria-hidden="true">
+                {row.kind === "folder" ? (row.open ? "▾" : "▸") : ""}
+              </span>
+              <span className="review__tree-name">
+                <span className="ellipsis">{row.name}</span>
+                {row.kind === "file" && drafts(row.path) && <span className="review__tree-unsaved" title="Unsaved edit" />}
+              </span>
+              <span className="review__tree-status">
+                {row.kind === "folder" && row.count > 0 && (
+                  <>
+                    <span className="review__tree-dot" aria-hidden="true" />
+                    <span className="review__tree-count">{row.count}</span>
+                  </>
+                )}
+                {status}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </>
   );
 }
 
@@ -743,6 +1018,10 @@ function statusClass(status: ChangeStatus): string {
     default:
       return "modified";
   }
+}
+
+function sameList(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((value, index) => value === b[index]);
 }
 
 function sameVersions(a: FileVersions, b: FileVersions): boolean {

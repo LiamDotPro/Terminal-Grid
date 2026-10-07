@@ -22,6 +22,16 @@
   grid-template-columns: var(--rail-w) minmax(0, 1fr) var(--rail-w);
 }
 
+/* The three heads hold different controls (buttons, a chevron, plain text);
+   one fixed height keeps their bottom borders in a line. */
+.notes__panel > .panel-head,
+.tree__head {
+  height: 42px;
+  padding-top: 0;
+  padding-bottom: 0;
+  flex: none;
+}
+
 .panel-head__collapse {
   flex: none;
   font-size: 16px;
@@ -457,6 +467,39 @@
   gap: 4px;
 }
 
+/* Task list items: the box takes the bullet's place. */
+.preview__doc li.task {
+  list-style: none;
+}
+
+.task__box {
+  position: relative;
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  margin: 0 8px 0 -21px;
+  vertical-align: -2px;
+  border: 1.5px solid var(--text-45);
+  border-radius: 3px;
+}
+
+.task__box[data-checked] {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.task__box[data-checked]::after {
+  content: "";
+  position: absolute;
+  left: 3.5px;
+  top: 0.5px;
+  width: 3px;
+  height: 7px;
+  border: solid var(--bg-root);
+  border-width: 0 1.75px 1.75px 0;
+  transform: rotate(45deg);
+}
+
 .preview__doc blockquote {
   margin: 0;
   padding-left: 14px;
@@ -494,4 +537,238 @@
   border: 0;
   background: var(--hair);
   margin: 4px 0;
+}
+
+/* Session notes, under the terminal in focus mode (Terminal Grid.dc.html turn 6) */
+
+.session-notes {
+  flex: none;
+  height: 360px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-radius: var(--radius-pane);
+  overflow: hidden;
+  background: var(--glass-pane);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--edge);
+  box-shadow: var(--shadow-pane);
+}
+
+.session-notes--empty {
+  height: auto;
+}
+
+:root[data-layout="compact"] .session-notes {
+  border: none;
+  box-shadow: none;
+}
+
+.session-notes__head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 8px 0 14px;
+  background: var(--header-wash);
+  border-bottom: 1px solid var(--hair);
+  white-space: nowrap;
+}
+
+.session-notes--empty .session-notes__head {
+  border-bottom: none;
+}
+
+.session-notes__folder {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-45);
+}
+
+.session-notes__plus {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.session-notes__body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+}
+
+.session-notes__list {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-right: 1px solid var(--hair);
+  background: rgb(var(--ink-rgb) / 0.02);
+}
+
+.session-notes__item {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  text-align: left;
+}
+
+.session-notes__item:hover {
+  background: var(--fill-2);
+}
+
+.session-notes__item--selected,
+.session-notes__item--selected:hover {
+  background: rgb(var(--accent-rgb) / 0.14);
+  box-shadow: inset 0 0 0 1px rgb(var(--accent-rgb) / 0.45);
+}
+
+.session-notes__item-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.session-notes__item-title {
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--text-85);
+}
+
+.session-notes__item--selected .session-notes__item-title {
+  color: var(--text-strong);
+}
+
+.session-notes__kind {
+  flex: none;
+  width: 14px;
+  font-size: 11px;
+  text-align: center;
+  color: var(--text-45);
+}
+
+/* Copied out of a terminal: the prompt mark, in the terminal's accent. */
+.session-notes__kind--copied {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: -0.05em;
+  color: var(--accent);
+}
+
+.session-notes__none {
+  margin: 0;
+  padding: 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-50);
+}
+
+.session-notes__fresh {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+
+.session-notes__item-meta {
+  font-size: 11px;
+  color: var(--text-50);
+  white-space: nowrap;
+}
+
+.session-notes__rename {
+  flex: none;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: var(--fill-2);
+  border: 1px solid rgb(var(--accent-rgb) / 0.6);
+  box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / 0.16);
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
+}
+
+.session-notes__view {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.session-notes__view-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 0 20px;
+}
+
+.session-notes__file {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-45);
+}
+
+.session-notes__edit {
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-size: 11.5px;
+  color: rgb(var(--text-rgb) / 0.6);
+}
+
+.session-notes__edit:hover {
+  background: var(--fill-hover);
+  color: var(--text-strong);
+}
+
+.session-notes__doc {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  user-select: text;
+}
+
+.session-notes__doc-title {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--text-strong);
+}
+
+.session-notes__doc-meta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-50);
+}
+
+.session-notes__loading {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-50);
+}
+
+/* The rendered note sits inside the panel's own padding, at a smaller size. */
+.session-notes__doc .preview__doc {
+  padding: 0;
+  max-width: none;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.55;
 }

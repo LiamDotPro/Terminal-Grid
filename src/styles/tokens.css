@@ -92,11 +92,16 @@
   --shadow-sheet: 0 40px 100px rgb(0 0 0 / calc(0.6 * var(--shadow-k))), inset 0 1px 0 rgb(var(--ink-rgb) / 0.14);
   --shadow-seg: 0 1px 6px rgb(0 0 0 / calc(0.25 * var(--shadow-k))), inset 0 1px 0 rgb(var(--ink-rgb) / 0.18);
 
-  --ring-focus: 0 0 0 4px rgb(var(--accent-rgb) / 0.28), 0 20px 50px rgb(0 0 0 / calc(0.45 * var(--shadow-k))),
+  /* The focus ring and the finished glow follow the theme unless Settings
+     sets them (inline on <html>, see lib/appearance.ts). */
+  --focus-rgb: var(--accent-rgb);
+  --finished-rgb: var(--ok-rgb);
+
+  --ring-focus: 0 0 0 4px rgb(var(--focus-rgb) / 0.28), 0 20px 50px rgb(0 0 0 / calc(0.45 * var(--shadow-k))),
     inset 0 1px 0 rgb(var(--ink-rgb) / 0.12);
-  --ring-finished: 0 0 0 4px rgb(var(--ok-rgb) / 0.14), 0 0 32px rgb(var(--ok-rgb) / 0.3),
+  --ring-finished: 0 0 0 4px rgb(var(--finished-rgb) / 0.14), 0 0 32px rgb(var(--finished-rgb) / 0.3),
     0 20px 50px rgb(0 0 0 / calc(0.45 * var(--shadow-k))), inset 0 1px 0 rgb(var(--ink-rgb) / 0.12);
-  --border-finished: rgb(var(--ok-rgb) / 0.75);
+  --border-finished: rgb(var(--finished-rgb) / 0.75);
 
   /* Terminal palette (mirrors TerminalPane.dc.html `C`) --------------- */
   --term-plain: #e6e9f0;
@@ -188,6 +193,28 @@
   --header-wash: none;
 }
 
+/* Glass (macOS) --------------------------------------------------------- */
+/* The dark design over real glass: the window is transparent and a native
+   HUD material (src-tauri/src/glass.rs) blurs whatever is behind the app. The
+   page paints no backdrop of its own, panes are only lightly tinted so the
+   desktop reads through them, and they drop their CSS blur, which could only
+   sample the empty page; sheets and popovers keep theirs to frost the panes. */
+:root[data-theme="glass"] {
+  --bg-root: transparent;
+  --bg-app: transparent;
+  --bg-option: #1a1c24;
+  --glass-panel: rgb(var(--glass-rgb) / 0.3);
+  --glass-pane: rgb(var(--glass-rgb) / 0.34);
+  --glass-sheet: rgb(var(--glass-rgb) / 0.62);
+  --glass-card: rgb(var(--glass-rgb) / 0.5);
+  --glass-blur: none;
+  --shadow-k: 0.6;
+}
+
+:root[data-theme="glass"] .chrome__pill-dot {
+  box-shadow: 0 0 0 2px rgb(var(--glass-rgb) / 0.8);
+}
+
 /* Compact layout -------------------------------------------------------- */
 /* Settings → Compact layout: square panes, no borders or shadows, and the
    least space between panes and around the window edge. Focus and finished
@@ -204,7 +231,7 @@
 }
 
 :root[data-layout="compact"] .pane--focused {
-  outline: 1px solid var(--accent);
+  outline: 1px solid rgb(var(--focus-rgb));
   outline-offset: -1px;
 }
 
@@ -212,6 +239,16 @@
   outline: 1px solid var(--border-finished);
   outline-offset: -1px;
   animation: none;
+}
+
+/* With no pane border to frame it, a lit header over a hairline read as a
+   separate strip. Here the wash fades out to nothing at the header's foot so
+   it runs straight into the terminal. The hairline goes transparent rather
+   than away, keeping its pixel so the terminal does not refit. Black has no
+   wash, so its hairline stays the only divider. */
+:root[data-layout="compact"]:not([data-theme="black"]) .pane__header {
+  background: linear-gradient(180deg, rgb(var(--ink-rgb) / 0.06), rgb(var(--ink-rgb) / 0));
+  border-bottom-color: transparent;
 }
 
 :root[data-layout="compact"] :is(.pane__header, .pane--focused .pane__header) {

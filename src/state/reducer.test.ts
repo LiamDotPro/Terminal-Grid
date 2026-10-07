@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { GitInfo, TerminalInfo, Worktree } from "../ipc/types";
+import type { GitInfo, NoteLink, TerminalInfo, Worktree } from "../ipc/types";
 import { paneStatus, toPaneView } from "./model";
-import { initialState, reducer, totalPages, visibleIds, type AppState } from "./reducer";
+import { initialState, reducer, toSession, totalPages, visibleIds, type AppState } from "./reducer";
 
 const info = (id: string, cwd = `C:/dev/${id}`): TerminalInfo => ({
   id,
@@ -211,6 +211,7 @@ describe("worktree menu", () => {
     branch: "feature",
     headShort: "3f2a91c",
     userName: null,
+    userNameOverridden: false,
     userEmail: null,
     remoteUrl: null,
     dirty: false,
@@ -248,6 +249,13 @@ describe("worktree menu", () => {
       ["spike", "cd", null],
       ["gone", "none", null],
     ]);
+  });
+
+  it("names the git author only when the repo overrides the global identity", () => {
+    const named = (userNameOverridden: boolean) =>
+      view(repo(withTerminals(1), { ...git([], false), userName: "Work Name", userNameOverridden })).user;
+    expect(named(false)).toBeNull();
+    expect(named(true)).toBe("Work Name");
   });
 
   it("opens a new pane instead of typing a cd into a running agent", () => {
@@ -421,5 +429,65 @@ describe("focus + review", () => {
     state = reducer(state, { type: "review/comment-add", comment: comment("b", "src/b.ts") });
     state = reducer(state, { type: "review/forget", repoRoot: "C:/dev/app", paths: ["src/a.ts"] });
     expect(state.review.comments.map((c) => c.id)).toEqual(["b"]);
+  });
+});
+
+describe("session notes", () => {
+  const link = (relPath: string, title = "Title"): NoteLink => ({
+    relPath,
+    title,
+    source: "claude",
+    branch: "main",
+    at: 1,
+  });
+
+  it("links notes to a session and keeps them across a restart and in the session file", () => {
+    let state = reducer(withTerminals(2), { type: "notes/link-add", id: "t1", link: link("repo/a.md") });
+    state = reducer(state, { type: "notes/link-add", id: "t1", link: link("repo/b.md") });
+    expect(state.terminals.t1!.notes.map((note) => note.relPath)).toEqual(["repo/a.md", "repo/b.md"]);
+    expect(state.terminals.t0!.notes).toEqual([]);
+
+    state = reducer(state, { type: "terminal/restarted", info: info("t1") });
+    expect(state.terminals.t1!.notes).toHaveLength(2);
+    expect(toSession(state).terminals[1]!.notes).toHaveLength(2);
+  });
+
+  it("remembers a copied note after its pane is closed, in the session file too", () => {
+    let state = reducer(withTerminals(1), { type: "notes/link-add", id: "t0", link: link("repo/a.md") });
+    state = reducer(state, { type: "terminal/removed", id: "t0" });
+    expect(state.copiedNotes["repo/a.md"]).toMatchObject({ source: "claude" });
+    const session = toSession(state);
+    expect(Object.keys(session.notes.copied ?? {})).toEqual(["repo/a.md"]);
+    const restored = reducer(initialState, { type: "ready", config: state.config, session });
+    expect(restored.copiedNotes["repo/a.md"]).toBeDefined();
+  });
+
+  it("restores links by position", () => {
+    const state = reducer(initialState, {
+      type: "terminal/restored",
+      infos: [info("n0"), info("n1")],
+      focusedId: null,
+      page: 0,
+      links: [[], [link("repo/a.md")]],
+    });
+    expect(state.terminals.n1!.notes).toHaveLength(1);
+    expect(state.terminals.n0!.notes).toEqual([]);
+  });
+
+  it("follows renames of the note or its folder and drops removed notes with their message", () => {
+    let state = reducer(withTerminals(1), { type: "notes/link-add", id: "t0", link: link("repo/a.md") });
+    state = reducer(state, { type: "notes/link-moved", from: "repo/a.md", to: "repo/b.md", title: "B" });
+    expect(state.terminals.t0!.notes[0]).toMatchObject({ relPath: "repo/b.md", title: "B" });
+    state = reducer(state, { type: "notes/link-moved", from: "repo", to: "work" });
+    expect(state.terminals.t0!.notes[0]!.relPath).toBe("work/b.md");
+
+    expect(Object.keys(state.copiedNotes)).toEqual(["work/b.md"]);
+    expect(state.copiedNotes["work/b.md"]!.title).toBe("B");
+
+    state = reducer(state, { type: "notes/toast", toast: { paneId: "t0", relPath: "work/b.md", at: 1 } });
+    state = reducer(state, { type: "notes/link-remove", relPath: "work/b.md" });
+    expect(state.terminals.t0!.notes).toEqual([]);
+    expect(state.copiedNotes).toEqual({});
+    expect(state.noteToast).toBeNull();
   });
 });

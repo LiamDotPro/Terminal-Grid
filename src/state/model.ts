@@ -3,7 +3,7 @@
  * into exactly what the pane header in the design needs, so components stay
  * free of derivation logic.
  */
-import type { GitInfo, TerminalId, TerminalInfo } from "../ipc/types";
+import type { GitInfo, NoteLink, TerminalId, TerminalInfo } from "../ipc/types";
 import { basename, formatBytes, formatElapsed, formatPercent, worktreeLabel } from "../lib/format";
 
 export interface AgentRun {
@@ -44,6 +44,8 @@ export interface TerminalState {
   atPrompt: boolean | null;
   stats: TerminalStats | null;
   lastOutputAt: number;
+  /** Notes linked to this session, oldest first (design turns 6 and 7). */
+  notes: NoteLink[];
 }
 
 export type PaneStatus = "running" | "idle" | "finished" | "exited";
@@ -77,6 +79,7 @@ export interface PaneView {
   title: string;
   cwd: string;
   branch: string | null;
+  /** Git author name, only when the repo overrides the global identity. */
   user: string | null;
   dirty: boolean;
   ahead: number;
@@ -126,7 +129,7 @@ export function toPaneView(term: TerminalState, index: number, ctx: PaneViewCont
     title: git?.repoName ?? basename(info.cwd) ?? info.cwd,
     cwd: info.cwd,
     branch: git?.branch ?? git?.headShort ?? null,
-    user: git?.userName ?? null,
+    user: git?.userNameOverridden ? git.userName : null,
     dirty: git?.dirty ?? false,
     ahead: git?.ahead ?? 0,
     behind: git?.behind ?? 0,

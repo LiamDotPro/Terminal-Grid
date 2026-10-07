@@ -18,6 +18,7 @@ import type {
   AgentEvent,
   Config,
   GitInfo,
+  NoteLink,
   NoteNode,
   Session,
   TerminalId,
@@ -39,6 +40,8 @@ export const DEFAULT_CONFIG: Config = {
   restoreSessionOnLaunch: true,
   theme: "system",
   compactLayout: false,
+  focusColor: null,
+  finishedColor: null,
 };
 
 export type SaveState = "clean" | "dirty" | "saving" | "saved" | "error";
@@ -90,8 +93,19 @@ export interface ReviewState {
   sent: SentBatch | null;
 }
 
+/** The pane's "Saved to session notes" message, with its Undo. */
+export interface NoteToast {
+  paneId: TerminalId;
+  relPath: string;
+  at: number;
+}
+
 export interface AppState {
   ready: boolean;
+  /** Launch is over: config and notes are loaded and the saved panes restored. */
+  booted: boolean;
+  /** How many saved panes launch is bringing back, for the splash's status line. */
+  restoringPanes: number;
   config: Config;
   /** Agent CLIs on PATH; each idle pane offers a button to start one. */
   installedAgents: string[];
@@ -106,6 +120,12 @@ export interface AppState {
   focusMode: boolean;
   review: ReviewState;
   notes: NotesState;
+  noteToast: NoteToast | null;
+  /**
+   * Notes copied out of a terminal, by path, outliving the pane they came
+   * from; any other note in a folder was written by hand.
+   */
+  copiedNotes: Record<string, NoteLink>;
   settingsOpen: boolean;
   hotkeysOpen: boolean;
   busy: boolean;
@@ -116,6 +136,8 @@ export interface AppState {
 
 export const initialState: AppState = {
   ready: false,
+  booted: false,
+  restoringPanes: 0,
   config: DEFAULT_CONFIG,
   installedAgents: [],
   activeTab: "terminals",
@@ -140,6 +162,8 @@ export const initialState: AppState = {
     treeCollapsed: false,
     previewCollapsed: false,
   },
+  noteToast: null,
+  copiedNotes: {},
   settingsOpen: false,
   hotkeysOpen: false,
   busy: false,
@@ -149,6 +173,7 @@ export const initialState: AppState = {
 
 export type Action =
   | { type: "ready"; config: Config; session: Session | null }
+  | { type: "booted" }
   | { type: "config/set"; config: Config }
   | { type: "agents/installed"; agents: string[] }
   | { type: "tab/set"; tab: "terminals" | "notes" }
@@ -164,7 +189,14 @@ export type Action =
   | { type: "tick"; now: number; activity: Record<TerminalId, number> }
   /** `after` places the new pane right behind that one instead of at the end. */
   | { type: "terminal/added"; info: TerminalInfo; focus: boolean; after?: TerminalId | null }
-  | { type: "terminal/restored"; infos: TerminalInfo[]; focusedId: TerminalId | null; page: number }
+  | {
+      type: "terminal/restored";
+      infos: TerminalInfo[];
+      focusedId: TerminalId | null;
+      page: number;
+      /** Each restored session's note links, by position. */
+      links?: NoteLink[][];
+    }
   | { type: "terminal/removed"; id: TerminalId }
   | { type: "terminal/restarted"; info: TerminalInfo }
   | { type: "terminal/exited"; id: TerminalId; code: number | null }
@@ -189,6 +221,12 @@ export type Action =
   | { type: "review/sent"; ids: string[]; repoRoot: string; paneId: TerminalId; at: number }
   /** Drops the comments on files that were committed and so left the review. */
   | { type: "review/forget"; repoRoot: string; paths: string[] }
+  | { type: "notes/link-add"; id: TerminalId; link: NoteLink }
+  /** A linked note went away (deleted, or the save was undone). */
+  | { type: "notes/link-remove"; relPath: string }
+  /** A note or a folder of notes was renamed; links follow it. */
+  | { type: "notes/link-moved"; from: string; to: string; title?: string }
+  | { type: "notes/toast"; toast: NoteToast | null }
   | { type: "notes/root"; root: string }
   | { type: "notes/collapse"; panel: "tree" | "preview"; collapsed: boolean }
   | { type: "notes/toggle-panel"; panel: "tree" | "preview" }
@@ -211,6 +249,7 @@ export function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         ready: true,
+        restoringPanes: action.config.restoreSessionOnLaunch ? (session?.terminals.length ?? 0) : 0,
         config: action.config,
         activeTab: session?.activeTab ?? state.activeTab,
         layoutMode: isLayoutMode(session?.layoutMode) ? session.layoutMode : state.layoutMode,
@@ -221,8 +260,12 @@ export function reducer(state: AppState, action: Action): AppState {
           treeCollapsed: session?.notes.treeCollapsed ?? state.notes.treeCollapsed,
           previewCollapsed: session?.notes.previewCollapsed ?? state.notes.previewCollapsed,
         },
+        copiedNotes: session?.notes.copied ?? state.copiedNotes,
       };
     }
+
+    case "booted":
+      return { ...state, booted: true };
 
     case "config/set":
       return { ...state, config: action.config };
@@ -290,7 +333,9 @@ export function reducer(state: AppState, action: Action): AppState {
 
     case "terminal/restored": {
       const terminals: Record<TerminalId, TerminalState> = { ...state.terminals };
-      for (const info of action.infos) terminals[info.id] = newTerminal(info, state.now);
+      action.infos.forEach((info, index) => {
+        terminals[info.id] = { ...newTerminal(info, state.now), notes: action.links?.[index] ?? [] };
+      });
       const order = [...state.order, ...action.infos.map((info) => info.id)];
       const focusedId =
         action.focusedId && terminals[action.focusedId] ? action.focusedId : (order[0] ?? null);
@@ -324,7 +369,7 @@ export function reducer(state: AppState, action: Action): AppState {
         ...state,
         terminals: {
           ...state.terminals,
-          [action.info.id]: { ...newTerminal(action.info, state.now), git: previous.git },
+          [action.info.id]: { ...newTerminal(action.info, state.now), git: previous.git, notes: previous.notes },
         },
       };
     }
@@ -480,6 +525,46 @@ export function reducer(state: AppState, action: Action): AppState {
       );
     }
 
+    case "notes/link-add": {
+      const linked = patchTerminal(state, action.id, (term) => ({
+        ...term,
+        notes: [...term.notes.filter((link) => link.relPath !== action.link.relPath), action.link],
+      }));
+      return { ...linked, copiedNotes: { ...linked.copiedNotes, [action.link.relPath]: action.link } };
+    }
+
+    case "notes/link-remove": {
+      const copiedNotes = { ...state.copiedNotes };
+      delete copiedNotes[action.relPath];
+      return {
+        ...patchLinks(state, (link) => (link.relPath === action.relPath ? null : link)),
+        copiedNotes,
+        noteToast: state.noteToast?.relPath === action.relPath ? null : state.noteToast,
+      };
+    }
+
+    case "notes/link-moved": {
+      const prefix = `${action.from}/`;
+      const move = (link: NoteLink): NoteLink => {
+        if (link.relPath === action.from) {
+          return { ...link, relPath: action.to, title: action.title ?? link.title };
+        }
+        if (link.relPath.startsWith(prefix)) {
+          return { ...link, relPath: `${action.to}/${link.relPath.slice(prefix.length)}` };
+        }
+        return link;
+      };
+      const copiedNotes: Record<string, NoteLink> = {};
+      for (const link of Object.values(state.copiedNotes)) {
+        const moved = move(link);
+        copiedNotes[moved.relPath] = moved;
+      }
+      return { ...patchLinks(state, move), copiedNotes };
+    }
+
+    case "notes/toast":
+      return { ...state, noteToast: action.toast };
+
     case "notes/root":
       return { ...state, notes: { ...state.notes, root: action.root } };
 
@@ -602,6 +687,7 @@ function newTerminal(info: TerminalInfo, now: number): TerminalState {
     atPrompt: null,
     stats: null,
     lastOutputAt: now,
+    notes: [],
   };
 }
 
@@ -615,6 +701,24 @@ function patchTerminal(
   const next = patch(term);
   if (next === term) return state;
   return { ...state, terminals: { ...state.terminals, [id]: next } };
+}
+
+/** Maps every note link of every terminal; null drops the link. */
+function patchLinks(state: AppState, patch: (link: NoteLink) => NoteLink | null): AppState {
+  let terminals = state.terminals;
+  for (const [id, term] of Object.entries(state.terminals)) {
+    let changed = false;
+    const notes: NoteLink[] = [];
+    for (const link of term.notes) {
+      const next = patch(link);
+      if (next !== link) changed = true;
+      if (next) notes.push(next);
+    }
+    if (!changed) continue;
+    if (terminals === state.terminals) terminals = { ...terminals };
+    terminals[id] = { ...term, notes };
+  }
+  return terminals === state.terminals ? state : { ...state, terminals };
 }
 
 function patchComments(
@@ -681,12 +785,14 @@ export function toSession(state: AppState): Session {
       id,
       cwd: state.terminals[id]?.info.cwd ?? "",
       labelOverride: null,
+      notes: state.terminals[id]?.notes ?? [],
     })),
     notes: {
       openRelPath: state.notes.openPath,
       expandedFolders: state.notes.expanded,
       treeCollapsed: state.notes.treeCollapsed,
       previewCollapsed: state.notes.previewCollapsed,
+      copied: state.copiedNotes,
     },
   };
 }

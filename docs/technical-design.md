@@ -382,7 +382,7 @@ pub struct Worktree {
 }
 ```
 
-`open_in` is what satisfies requirement 5. The pane header puts a small fork glyph in front of the branch when `is_worktree` is set. Once the repo has two or more worktrees the branch opens a menu listing them, marking its own and the ones open in other panes (with the pane number). Picking one focuses the pane that already has it, otherwise types a shell specific `cd` at the prompt, or opens a new pane there when an agent is running in this pane (Shift+click always opens a new pane).
+`open_in` is what satisfies requirement 5. The pane header puts a small fork glyph in front of the branch when `is_worktree` is set. In any repo the branch opens a menu listing the worktrees, marking its own and the ones open in other panes (with the pane number). Its foot has "New worktree…": a branch name field that runs `worktree_create` (`git worktree add` into `../<repo>-<branch>`, checking out an existing branch or creating one from the pane's HEAD) and opens a pane there. Linked worktrees no pane is in get a remove button (`worktree_remove`, after a confirm; the branch stays). Picking one focuses the pane that already has it, otherwise types a shell specific `cd` at the prompt, or opens a new pane there when an agent is running in this pane (Shift+click always opens a new pane).
 
 ### 7.2 Execution
 
@@ -440,6 +440,7 @@ Labels: the backend supplies fields only; the design decides how to compose them
 |---|---|
 | `review_status { id }` | `git status --porcelain=v1 -z` split into `staged` and `unstaged` `ChangedFile`s with `--numstat` line counts, plus `repoRoot`, `branch`, `head`. Untracked files are listed as unstaged with status `?` |
 | `review_file { id, path, oldPath, staged }` | The two versions a diff is drawn between (HEAD → index when staged, index → working tree when not) and the working tree copy for the editor, with its mtime. Binary files and files over 2 MiB come back flagged, without text |
+| `review_files { id }` | Every file the edit tree lists: `git ls-files --cached --others --exclude-standard`, sorted |
 | `review_stage { id, paths }` / `review_unstage { id, paths }` | `git add -A` / `git restore --staged` (`git rm --cached` before the first commit), with literal pathspecs |
 | `review_write_file { id, path, content, expectedMtimeMs? }` | Atomic write of the editor's buffer; a newer mtime on disk is a `Conflict`, as for notes |
 

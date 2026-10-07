@@ -1,7 +1,8 @@
 # Appearance
 
-Two settings change how Terminal Grid looks: **Theme** and **Compact layout**.
-Both are in **Settings** (`<mod>+,`) and apply as soon as you press Save.
+Three settings change how Terminal Grid looks: **Theme**, **Compact layout**
+and **Colours**. They are in **Settings** (`<mod>+,`, `⌘,` on a Mac), preview
+as you change them, and stick when you press Save; Cancel puts them back.
 
 ## Themes
 
@@ -11,6 +12,7 @@ Both are in **Settings** (`<mod>+,`) and apply as soon as you press Save.
 | **Light** | Frosted white panes on a pale background, with deeper accent colours so text and badges keep their contrast. |
 | **Dark** | The original look: frosted dark glass over a violet and teal glow. |
 | **Black** | Total darkness: pure black background, no coloured glow, no shadows and near opaque panes. Good for OLED screens and dark rooms. |
+| **Glass** (macOS) | The window turns see-through: your desktop shows through it, blurred. In full screen there is nothing behind the window, so it shows as Dark. |
 
 The terminals follow the theme too. Light uses a darker ANSI palette so program
 output stays readable on white; Dark and Black share the bright palette.
@@ -59,9 +61,18 @@ Compact layout works with every theme.
 
 ![Compact layout in the Light theme](screenshots/compact-light.png)
 
+## Colours
+
+**Focus ring** sets the colour of the ring around the focused pane (and the
+review panel in focus mode); **Agent finished** sets the green of a pane whose
+agent just finished. Click a swatch to open the system colour picker. Until you
+pick one, each follows the theme; **Reset** goes back to the theme's colour.
+
 ## Where the settings are stored
 
-Both live in `config.json` in the app's config folder, as `theme` (`"system"`,
-`"light"`, `"dark"` or `"black"`) and `compactLayout` (`true` or `false`).
+They live in `config.json` in the app's config folder, as `theme` (`"system"`,
+`"light"`, `"dark"`, `"black"` or `"glass"`), `compactLayout` (`true` or
+`false`), and `focusColor` / `finishedColor` (`"#rrggbb"`, or `null` for the
+theme's colour).
 Config files from before these settings existed keep all their other values
 and start on System with the regular layout.

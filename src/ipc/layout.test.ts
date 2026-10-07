@@ -2,12 +2,17 @@ import { describe, expect, it } from "vitest";
 import {
   PAGE_SIZE,
   insertAfter,
+  evenSizes,
   layoutFor,
+  moveDivider,
   moveTerminal,
   nextLayoutMode,
   pageCount,
   pageOf,
   pageSlice,
+  rowCounts,
+  sizesFit,
+  withColumns,
 } from "./layout";
 
 describe("layoutFor", () => {
@@ -34,6 +39,53 @@ describe("layoutFor", () => {
     expect(nextLayoutMode("grid")).toBe("columns");
     expect(nextLayoutMode("columns")).toBe("rows");
     expect(nextLayoutMode("rows")).toBe("grid");
+  });
+});
+
+describe("rowCounts", () => {
+  it("leaves a short last row that spans the page instead of a gap", () => {
+    expect(rowCounts(1)).toEqual([1]);
+    expect(rowCounts(3)).toEqual([2, 1]);
+    expect(rowCounts(4)).toEqual([2, 2]);
+    expect(rowCounts(5)).toEqual([3, 2]);
+    expect(rowCounts(7)).toEqual([3, 3, 1]);
+    expect(rowCounts(8)).toEqual([3, 3, 2]);
+    expect(rowCounts(9)).toEqual([3, 3, 3]);
+  });
+
+  it("follows the stacking modes", () => {
+    expect(rowCounts(3, "columns")).toEqual([3]);
+    expect(rowCounts(3, "rows")).toEqual([1, 1, 1]);
+  });
+});
+
+describe("pane sizes", () => {
+  it("starts even and knows which page shape it fits", () => {
+    const sizes = evenSizes([2, 1]);
+    expect(sizes).toEqual({ rows: [0.5, 0.5], cols: [[0.5, 0.5], [1]] });
+    expect(sizesFit(sizes, [2, 1])).toBe(true);
+    expect(sizesFit(sizes, [2, 2])).toBe(false);
+    expect(sizesFit(sizes, [3])).toBe(false);
+  });
+
+  it("moves a divider between its two neighbours only", () => {
+    const next = moveDivider([0.25, 0.25, 0.5], 1, 0.75, 0.1);
+    expect(next[0]).toBeCloseTo(0.25);
+    expect(next[1]).toBeCloseTo(0.5);
+    expect(next[2]).toBeCloseTo(0.25);
+  });
+
+  it("keeps both neighbours at least the minimum", () => {
+    expect(moveDivider([0.5, 0.5], 0, 0.01, 0.1)).toEqual([0.1, 0.9]);
+    expect(moveDivider([0.5, 0.5], 0, 2, 0.1)[1]).toBeCloseTo(0.1);
+    // A minimum the pair cannot hold splits it evenly.
+    expect(moveDivider([0.1, 0.1, 0.8], 0, 0, 0.3)).toEqual([0.1, 0.1, 0.8]);
+    expect(moveDivider([0.5, 0.5], 1, 0.3, 0.1)).toEqual([0.5, 0.5]);
+  });
+
+  it("resizes every full row together and leaves the short row alone", () => {
+    const sizes = withColumns(evenSizes([3, 3, 2]), 3, [0.5, 0.25, 0.25]);
+    expect(sizes.cols).toEqual([[0.5, 0.25, 0.25], [0.5, 0.25, 0.25], [0.5, 0.5]]);
   });
 });
 

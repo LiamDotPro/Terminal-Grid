@@ -37,6 +37,8 @@ export interface GitInfo {
   branch: string | null;
   headShort: string | null;
   userName: string | null;
+  /** The repo's effective user.name differs from the global one. */
+  userNameOverridden: boolean;
   userEmail: string | null;
   remoteUrl: string | null;
   dirty: boolean;
@@ -101,8 +103,11 @@ export interface NoteNode {
 
 export type HotkeyModifier = "ctrl+alt" | "ctrl+shift";
 
-/** "system" follows the OS light/dark setting; "black" is the total darkness theme. */
-export type ThemePreference = "system" | "light" | "dark" | "black";
+/**
+ * "system" follows the OS light/dark setting; "black" is the total darkness
+ * theme; "glass" (macOS only) shows the desktop through the window.
+ */
+export type ThemePreference = "system" | "light" | "dark" | "black" | "glass";
 
 export interface Config {
   version: 1;
@@ -118,12 +123,34 @@ export interface Config {
   restoreSessionOnLaunch: boolean;
   theme: ThemePreference;
   compactLayout: boolean;
+  /** `#rrggbb` for the focused pane's ring; null follows the theme. */
+  focusColor: string | null;
+  /** `#rrggbb` for a pane whose agent finished; null follows the theme. */
+  finishedColor: string | null;
+}
+
+/**
+ * A note copied out of a pane's output, linked to that terminal session
+ * (design turns 6 and 7). Notes written by hand belong to the repository's
+ * notes folder instead and have no link.
+ */
+export interface NoteLink {
+  /** Relative to the notes root. */
+  relPath: string;
+  title: string;
+  /** Who wrote what was saved: the agent's name, or "Terminal" for plain shell output. */
+  source: string;
+  branch: string | null;
+  /** Epoch ms when it was saved. */
+  at: number;
 }
 
 export interface SavedTerminal {
   id: TerminalId;
   cwd: string;
   labelOverride: string | null;
+  /** Notes linked to this session; absent in sessions written before them. */
+  notes?: NoteLink[];
 }
 
 export interface Session {
@@ -140,6 +167,11 @@ export interface Session {
     /** Side panels folded away; absent in older sessions. */
     treeCollapsed?: boolean;
     previewCollapsed?: boolean;
+    /**
+     * Every note copied out of a terminal, by path, so it still reads as
+     * copied after its pane is closed. Absent in older sessions.
+     */
+    copied?: Record<string, NoteLink>;
   };
 }
 
@@ -235,9 +267,15 @@ export interface Commands {
   // git
   get_git_info: { in: { id: TerminalId }; out: GitInfo };
   refresh_git_info: { in: { id: TerminalId }; out: void };
+  /** Adds a worktree for `branch` next to the main checkout; returns its path. */
+  worktree_create: { in: { id: TerminalId; branch: string }; out: string };
+  /** Deletes a linked worktree's folder (or prunes it when already gone). */
+  worktree_remove: { in: { id: TerminalId; path: string }; out: void };
 
   // review (focus mode)
   review_status: { in: { id: TerminalId }; out: ReviewStatus };
+  /** Every file of the repository, for the edit tree. */
+  review_files: { in: { id: TerminalId }; out: string[] };
   review_file: {
     in: { id: TerminalId; path: string; oldPath: string | null; staged: boolean };
     out: FileVersions;
@@ -265,6 +303,9 @@ export interface Commands {
   config_set: { in: { patch: Partial<Config> }; out: Config };
   session_get: { in: Record<string, never>; out: Session | null };
   session_set: { in: { session: Session }; out: void };
+
+  // window
+  set_window_glass: { in: { enabled: boolean }; out: void };
 }
 
 export type CommandName = keyof Commands;

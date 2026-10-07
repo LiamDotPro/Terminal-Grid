@@ -235,8 +235,13 @@ pub fn status(cwd: &Path) -> Result<ReviewStatus> {
 
     // Without a commit there is nothing for --cached to compare against except
     // the empty tree, which git spells as this well known id.
-    let base = head.as_deref().unwrap_or("4b825dc642cb6eb9a060e54bf8d69288fbee4904");
-    let staged_stats = parse_numstat(&git_text(&root, &["diff", "--cached", "--numstat", "-z", base])?);
+    let base = head
+        .as_deref()
+        .unwrap_or("4b825dc642cb6eb9a060e54bf8d69288fbee4904");
+    let staged_stats = parse_numstat(&git_text(
+        &root,
+        &["diff", "--cached", "--numstat", "-z", base],
+    )?);
     let unstaged_stats = parse_numstat(&git_text(&root, &["diff", "--numstat", "-z"])?);
 
     let (staged, mut unstaged) = split_status(&entries, &staged_stats, &unstaged_stats);
@@ -268,6 +273,33 @@ fn count_lines(text: &str) -> u32 {
     }
     let newlines = text.bytes().filter(|byte| *byte == b'\n').count();
     (newlines + usize::from(!text.ends_with('\n'))) as u32
+}
+
+// Files -----------------------------------------------------------------------
+
+/// Every file the edit tree lists (design turn 5): tracked files plus
+/// untracked ones that are not ignored, relative to the root, sorted.
+pub fn files(cwd: &Path) -> Result<Vec<String>> {
+    let root = repo_root(cwd)?;
+    let output = git_text(
+        &root,
+        &[
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+        ],
+    )?;
+    let mut paths: Vec<String> = output
+        .split('\0')
+        .filter(|path| !path.is_empty())
+        .map(str::to_string)
+        .collect();
+    paths.sort();
+    // A file with unmerged stages is listed once per stage.
+    paths.dedup();
+    Ok(paths)
 }
 
 // File versions ---------------------------------------------------------------
@@ -337,15 +369,16 @@ pub fn file_versions(
 
     let blobs = [&old, &new, &disk];
     let binary = blobs.iter().any(|blob| matches!(blob, Some(Blob::Binary)));
-    let too_large = blobs.iter().any(|blob| matches!(blob, Some(Blob::TooLarge)));
+    let too_large = blobs
+        .iter()
+        .any(|blob| matches!(blob, Some(Blob::TooLarge)));
     let text = |blob: Option<Blob>| match blob {
         Some(Blob::Text(text)) => Some(text),
         _ => None,
     };
 
     Ok(FileVersions {
-        disk_mtime_ms: matches!(disk, Some(Blob::Text(_)))
-            .then(|| mtime_ms(&root.join(rel_path))),
+        disk_mtime_ms: matches!(disk, Some(Blob::Text(_))).then(|| mtime_ms(&root.join(rel_path))),
         old: text(old),
         new: text(new),
         disk: text(disk),
@@ -391,7 +424,11 @@ pub fn unstage(cwd: &Path, paths: &[String]) -> Result<()> {
         run_paths(&root, &["restore", "--staged"], paths)
     } else {
         // Before the first commit there is no HEAD to restore from.
-        run_paths(&root, &["rm", "--cached", "-r", "-q", "--ignore-unmatch"], paths)
+        run_paths(
+            &root,
+            &["rm", "--cached", "-r", "-q", "--ignore-unmatch"],
+            paths,
+        )
     }
 }
 
@@ -427,7 +464,9 @@ pub fn write_file(
         uuid::Uuid::new_v4()
     ));
     // Keep the file's permissions (an executable script stays executable).
-    let permissions = fs::metadata(&path).ok().map(|metadata| metadata.permissions());
+    let permissions = fs::metadata(&path)
+        .ok()
+        .map(|metadata| metadata.permissions());
     fs::write(&temp, content)?;
     if let Some(permissions) = permissions {
         let _ = fs::set_permissions(&temp, permissions);
@@ -514,6 +553,11 @@ pub async fn review_status(app: AppHandle, id: TerminalId) -> Result<ReviewStatu
 }
 
 #[tauri::command]
+pub async fn review_files(app: AppHandle, id: TerminalId) -> Result<Vec<String>> {
+    crate::blocking(move || files(&cwd_of(&app, &id)?)).await?
+}
+
+#[tauri::command]
 pub async fn review_file(
     app: AppHandle,
     id: TerminalId,
@@ -583,9 +627,21 @@ mod tests {
         assert_eq!(
             stats,
             vec![
-                NumStat { path: "src/a.ts".into(), additions: Some(4), deletions: Some(2) },
-                NumStat { path: "logo.png".into(), additions: None, deletions: None },
-                NumStat { path: "new.ts".into(), additions: Some(1), deletions: Some(0) },
+                NumStat {
+                    path: "src/a.ts".into(),
+                    additions: Some(4),
+                    deletions: Some(2)
+                },
+                NumStat {
+                    path: "logo.png".into(),
+                    additions: None,
+                    deletions: None
+                },
+                NumStat {
+                    path: "new.ts".into(),
+                    additions: Some(1),
+                    deletions: Some(0)
+                },
             ]
         );
     }
@@ -640,7 +696,10 @@ mod tests {
         git(&dir, &["init", "-q", "-b", "main"]);
         fs::write(dir.join("a.txt"), "one\ntwo\n").unwrap();
         git(&dir, &["add", "a.txt"]);
-        git(&dir, &["-c", "commit.gpgsign=false", "commit", "-q", "-m", "init"]);
+        git(
+            &dir,
+            &["-c", "commit.gpgsign=false", "commit", "-q", "-m", "init"],
+        );
 
         fs::write(dir.join("a.txt"), "one\n2\n").unwrap();
         fs::write(dir.join("new.md"), "hello\n").unwrap();
@@ -666,6 +725,11 @@ mod tests {
 
         unstage(&dir, &["a.txt".to_string()]).unwrap();
         assert!(status(&dir).unwrap().staged.is_empty());
+
+        fs::write(dir.join(".gitignore"), "build/\n").unwrap();
+        fs::create_dir_all(dir.join("build")).unwrap();
+        fs::write(dir.join("build").join("out.js"), "x\n").unwrap();
+        assert_eq!(files(&dir).unwrap(), vec![".gitignore", "a.txt", "new.md"]);
 
         let _ = fs::remove_dir_all(&dir);
     }

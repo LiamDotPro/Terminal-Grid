@@ -49,6 +49,9 @@ pub struct GitInfo {
     pub branch: Option<String>,
     pub head_short: Option<String>,
     pub user_name: Option<String>,
+    /// True when the repo resolves `user.name` to something other than the
+    /// global identity (a local setting or an `includeIf`).
+    pub user_name_overridden: bool,
     pub user_email: Option<String>,
     pub remote_url: Option<String>,
     pub dirty: bool,
@@ -68,6 +71,7 @@ impl GitInfo {
             branch: None,
             head_short: None,
             user_name: None,
+            user_name_overridden: false,
             user_email: None,
             remote_url: None,
             dirty: false,
@@ -222,14 +226,17 @@ impl GitService {
                 .is_some_and(|status| !status.trim().is_empty())
         };
 
-        let (ahead, behind) = cli::value(cwd, &["rev-list", "--left-right", "--count", "@{upstream}...HEAD"])
-            .and_then(|counts| {
-                let mut parts = counts.split_whitespace();
-                let behind = parts.next()?.parse().ok()?;
-                let ahead = parts.next()?.parse().ok()?;
-                Some((ahead, behind))
-            })
-            .unwrap_or((0, 0));
+        let (ahead, behind) = cli::value(
+            cwd,
+            &["rev-list", "--left-right", "--count", "@{upstream}...HEAD"],
+        )
+        .and_then(|counts| {
+            let mut parts = counts.split_whitespace();
+            let behind = parts.next()?.parse().ok()?;
+            let ahead = parts.next()?.parse().ok()?;
+            Some((ahead, behind))
+        })
+        .unwrap_or((0, 0));
 
         let worktrees = cli::output(cwd, &["worktree", "list", "--porcelain"])
             .map(|porcelain| worktree::parse(&porcelain))
@@ -255,11 +262,16 @@ impl GitService {
             })
             .collect();
 
+        let user_name = cli::value(cwd, &["config", "--get", "user.name"]);
+        let user_name_overridden = user_name.is_some()
+            && user_name != cli::value(cwd, &["config", "--global", "--get", "user.name"]);
+
         GitInfo {
             in_repo: true,
             repo_name: last_segment(&main_root),
             is_worktree: !same_path(&main_root, &repo_root),
-            user_name: cli::value(cwd, &["config", "--get", "user.name"]),
+            user_name,
+            user_name_overridden,
             user_email: cli::value(cwd, &["config", "--get", "user.email"]),
             remote_url: cli::value(cwd, &["remote", "get-url", "origin"]),
             repo_root: Some(repo_root),
@@ -434,8 +446,14 @@ mod tests {
     #[test]
     #[cfg(not(windows))]
     fn paths_compare_case_sensitively_elsewhere() {
-        assert_eq!(key_for(Path::new("/dev/app/")), key_for(Path::new("/dev/app")));
-        assert_ne!(key_for(Path::new("/Dev/App")), key_for(Path::new("/dev/app")));
+        assert_eq!(
+            key_for(Path::new("/dev/app/")),
+            key_for(Path::new("/dev/app"))
+        );
+        assert_ne!(
+            key_for(Path::new("/Dev/App")),
+            key_for(Path::new("/dev/app"))
+        );
     }
 
     #[test]
@@ -468,19 +486,32 @@ mod tests {
     #[test]
     fn a_relative_common_dir_is_resolved_against_the_repo_root() {
         assert_eq!(absolutise("C:/dev/app", ".git"), "C:/dev/app/.git");
-        assert_eq!(absolutise("/dev/app", "../shared.git"), "/dev/app/../shared.git");
+        assert_eq!(
+            absolutise("/dev/app", "../shared.git"),
+            "/dev/app/../shared.git"
+        );
     }
 
     #[test]
     fn an_absolute_common_dir_is_kept() {
-        let dir = if cfg!(windows) { "C:/dev/app/.git" } else { "/dev/app/.git" };
+        let dir = if cfg!(windows) {
+            "C:/dev/app/.git"
+        } else {
+            "/dev/app/.git"
+        };
         assert_eq!(absolutise("/elsewhere", dir), dir);
     }
 
     #[test]
     fn repo_name_is_the_last_path_segment() {
-        assert_eq!(last_segment("C:/dev/terminal-grid").as_deref(), Some("terminal-grid"));
-        assert_eq!(last_segment("C:/dev/terminal-grid/").as_deref(), Some("terminal-grid"));
+        assert_eq!(
+            last_segment("C:/dev/terminal-grid").as_deref(),
+            Some("terminal-grid")
+        );
+        assert_eq!(
+            last_segment("C:/dev/terminal-grid/").as_deref(),
+            Some("terminal-grid")
+        );
     }
 
     #[test]

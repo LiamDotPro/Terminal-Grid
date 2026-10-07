@@ -1,7 +1,18 @@
-//! Parser for `git worktree list --porcelain`.
-//! See docs/technical-design.md section 7.3.
+//! Worktrees: the parser for `git worktree list --porcelain` (see
+//! docs/technical-design.md section 7.3), and creating and removing them from
+//! the branch menu (section 7.5).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+use tauri::{AppHandle, Manager};
+
+use super::cli;
+use crate::error::{AppError, Result};
+use crate::pty::TerminalId;
+
+/// Checking out a large repository into a new folder takes a while.
+const TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedWorktree {
@@ -91,6 +102,198 @@ pub fn normalise(path: &str) -> String {
     path.trim().replace('\\', "/")
 }
 
+// Creating and removing ------------------------------------------------
+
+/// Adds a worktree for `branch` next to the main checkout (`../app-feature-x`)
+/// and returns its path. An existing branch, local or on one remote, is checked
+/// out; any other name becomes a new branch from the pane's HEAD.
+pub fn create(cwd: &Path, branch: &str) -> Result<String> {
+    let branch = branch.trim();
+    let valid = !branch.is_empty() && cli::run(cwd, &["check-ref-format", "--branch", branch])?.ok;
+    if !valid {
+        return Err(AppError::InvalidName {
+            message: format!("\"{branch}\" is not a valid branch name"),
+        });
+    }
+
+    let main_root = main_root(cwd)?;
+    let target = free_path(&sibling_path(&main_root, branch)?);
+    let target_text = normalise(&target.to_string_lossy());
+
+    let local = cli::value(
+        cwd,
+        &[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("refs/heads/{branch}"),
+        ],
+    )
+    .is_some();
+    // git checks out (and tracks) a branch that exists on exactly one remote.
+    let remotes = cli::output(
+        cwd,
+        &[
+            "for-each-ref",
+            "--format=%(refname)",
+            &format!("refs/remotes/*/{branch}"),
+        ],
+    )
+    .map(|refs| refs.lines().filter(|line| !line.is_empty()).count())
+    .unwrap_or(0);
+
+    if local || remotes == 1 {
+        git(cwd, &["worktree", "add", &target_text, branch])?;
+    } else {
+        git(cwd, &["worktree", "add", "-b", branch, &target_text])?;
+    }
+    Ok(target_text)
+}
+
+/// Removes a linked worktree's folder; the branch stays. A worktree whose
+/// folder is already gone is pruned instead.
+pub fn remove(cwd: &Path, path: &str) -> Result<()> {
+    let listed = cli::output(cwd, &["worktree", "list", "--porcelain"])
+        .map(|porcelain| parse(&porcelain))
+        .unwrap_or_default();
+    let key = super::key_for(Path::new(path));
+    let Some((index, worktree)) = listed
+        .iter()
+        .enumerate()
+        .find(|(_, worktree)| super::key_for(&worktree.path) == key)
+    else {
+        return Err(AppError::NotFound {
+            message: format!("{path} is not a worktree of this repository"),
+        });
+    };
+
+    let refuse = |message: &str| {
+        Err(AppError::InvalidName {
+            message: message.to_string(),
+        })
+    };
+    if index == 0 {
+        return refuse("The main checkout cannot be removed.");
+    }
+    if worktree.locked {
+        return refuse("This worktree is locked. Unlock it with git worktree unlock first.");
+    }
+    if super::is_inside(&super::key_for(cwd), path) {
+        return refuse("This pane is inside that worktree. Move it out first.");
+    }
+
+    if worktree.prunable {
+        return git(cwd, &["worktree", "prune"]);
+    }
+    git(cwd, &["worktree", "remove", path]).map_err(|error| match error {
+        AppError::Io { message } if message.contains("modified or untracked files") => {
+            AppError::InvalidName {
+                message: "It has uncommitted changes. Commit or stash them first, then remove it."
+                    .to_string(),
+            }
+        }
+        other => other,
+    })
+}
+
+fn git(cwd: &Path, args: &[&str]) -> Result<()> {
+    let output = cli::run_raw(cwd, args, TIMEOUT)?;
+    if output.ok {
+        return Ok(());
+    }
+    let message = output.stderr.trim();
+    Err(AppError::Io {
+        message: message
+            .strip_prefix("fatal: ")
+            .unwrap_or(message)
+            .to_string(),
+    })
+}
+
+/// The main checkout, wherever in the repository `cwd` sits.
+fn main_root(cwd: &Path) -> Result<String> {
+    let not_a_repo = || AppError::NotFound {
+        message: "this pane is not inside a git repository".to_string(),
+    };
+    let base = cli::output(cwd, &["rev-parse", "--show-toplevel", "--git-common-dir"])
+        .ok_or_else(not_a_repo)?;
+    let mut lines = base.lines();
+    let repo_root = lines.next().map(normalise).ok_or_else(not_a_repo)?;
+    Ok(lines
+        .next()
+        .map(|dir| super::absolutise(&repo_root, &normalise(dir)))
+        .as_deref()
+        .and_then(super::parent_of_git_dir)
+        .unwrap_or(repo_root))
+}
+
+/// `C:/dev/app` and `feature/x` give `C:/dev/app-feature-x`.
+fn sibling_path(main_root: &str, branch: &str) -> Result<PathBuf> {
+    let main = Path::new(main_root);
+    let (Some(parent), Some(repo)) = (main.parent(), main.file_name()) else {
+        return Err(AppError::InvalidName {
+            message: format!("no folder next to {main_root} to put the worktree in"),
+        });
+    };
+    let slug: String = branch
+        .chars()
+        .map(|c| {
+            if c == '/' || c == '\\' || c.is_whitespace() {
+                '-'
+            } else {
+                c
+            }
+        })
+        .collect();
+    Ok(parent.join(format!("{}-{slug}", repo.to_string_lossy())))
+}
+
+/// `path`, or `path-2`, `path-3`... when something is already there.
+fn free_path(path: &Path) -> PathBuf {
+    if !path.exists() {
+        return path.to_path_buf();
+    }
+    (2..)
+        .map(|n| PathBuf::from(format!("{}-{n}", path.to_string_lossy())))
+        .find(|candidate| !candidate.exists())
+        .expect("some suffix is free")
+}
+
+fn cwd_of(app: &AppHandle, id: &TerminalId) -> Result<PathBuf> {
+    app.state::<crate::AppState>()
+        .pty
+        .cwd_of(id)
+        .ok_or_else(|| AppError::NotFound {
+            message: format!("terminal {id}"),
+        })
+}
+
+/// Every pane of the repository picks the change up straight away.
+fn refresh(app: &AppHandle, id: &TerminalId) {
+    let state = app.state::<crate::AppState>();
+    super::refresh_repo_of(app, &state, id, Duration::ZERO);
+}
+
+#[tauri::command]
+pub async fn worktree_create(app: AppHandle, id: TerminalId, branch: String) -> Result<String> {
+    crate::blocking(move || {
+        let path = create(&cwd_of(&app, &id)?, &branch)?;
+        refresh(&app, &id);
+        Ok(path)
+    })
+    .await?
+}
+
+#[tauri::command]
+pub async fn worktree_remove(app: AppHandle, id: TerminalId, path: String) -> Result<()> {
+    crate::blocking(move || {
+        remove(&cwd_of(&app, &id)?, &path)?;
+        refresh(&app, &id);
+        Ok(())
+    })
+    .await?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -164,5 +367,74 @@ mod tests {
     #[test]
     fn normalises_backslashes() {
         assert_eq!(normalise(r"C:\dev\app"), "C:/dev/app");
+    }
+
+    fn git_in(dir: &Path, args: &[&str]) {
+        let status = std::process::Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .env("GIT_AUTHOR_NAME", "Test")
+            .env("GIT_AUTHOR_EMAIL", "test@example.com")
+            .env("GIT_COMMITTER_NAME", "Test")
+            .env("GIT_COMMITTER_EMAIL", "test@example.com")
+            .status()
+            .expect("git runs");
+        assert!(status.success(), "git {args:?}");
+    }
+
+    #[test]
+    fn sibling_paths_flatten_the_branch() {
+        assert_eq!(
+            sibling_path("C:/dev/app", "feature/x").unwrap(),
+            PathBuf::from("C:/dev/app-feature-x")
+        );
+    }
+
+    #[test]
+    fn create_and_remove_round_trip() {
+        let base = std::env::temp_dir().join(format!("tg-worktree-{}", uuid::Uuid::new_v4()));
+        let main = base.join("app");
+        std::fs::create_dir_all(&main).unwrap();
+        let main = main.canonicalize().unwrap();
+        git_in(&main, &["init", "-q", "-b", "main"]);
+        std::fs::write(main.join("a.txt"), "one\n").unwrap();
+        git_in(&main, &["add", "a.txt"]);
+        git_in(
+            &main,
+            &["-c", "commit.gpgsign=false", "commit", "-q", "-m", "init"],
+        );
+        git_in(&main, &["branch", "existing"]);
+
+        // A new name becomes a new branch next to the main checkout.
+        let fresh = create(&main, "feature/x").unwrap();
+        assert!(fresh.ends_with("/app-feature-x"));
+        assert!(Path::new(&fresh).join("a.txt").exists());
+
+        // An existing branch is checked out, from inside another worktree too.
+        let existing = create(Path::new(&fresh), "existing").unwrap();
+        assert!(existing.ends_with("/app-existing"));
+
+        // A folder already in the way gets a suffix.
+        std::fs::create_dir_all(base.join("app-taken")).unwrap();
+        assert!(create(&main, "taken").unwrap().ends_with("/app-taken-2"));
+
+        assert!(create(&main, "bad..name").is_err());
+        assert!(create(&main, "existing").is_err(), "already checked out");
+
+        // Uncommitted work keeps a worktree; the main checkout is never removed.
+        std::fs::write(Path::new(&existing).join("a.txt"), "two\n").unwrap();
+        assert!(remove(&main, &existing).is_err());
+        assert!(remove(Path::new(&fresh), &normalise(&main.to_string_lossy())).is_err());
+        assert!(
+            remove(Path::new(&fresh), &fresh).is_err(),
+            "the pane is inside it"
+        );
+
+        remove(&main, &fresh).unwrap();
+        assert!(!Path::new(&fresh).exists());
+        let listed = parse(&cli::output(&main, &["worktree", "list", "--porcelain"]).unwrap());
+        assert_eq!(listed.len(), 3);
+
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

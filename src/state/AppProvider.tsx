@@ -39,16 +39,28 @@ import { TASK_REPORT_PROMPT } from "../lib/agentTask";
 import { hotkeyScheme, type HotkeyScheme } from "../lib/hotkeys";
 import { reviewMessage, reviewMessageOneLine } from "../lib/review";
 import { errorMessage, isAppError } from "../lib/appError";
+import { basename } from "../lib/format";
+import {
+  folderFor,
+  noteContent,
+  noteFromSelection,
+  slugFrom,
+  splitHeading,
+  uniqueNotePath,
+} from "../lib/sessionNotes";
 import { cdCommand, clearLineKey } from "../lib/shellCommand";
 import { matchesAgentPattern } from "../terminals/osc";
 import { terminalRegistry } from "../terminals/registry";
 import { closeUnownedTerminals } from "./orphans";
-import { initialState, reducer, toSession, type AppState, type ReviewComment } from "./reducer";
+import type { WorktreeChip } from "./model";
+import { initialState, reducer, toSession, type Action, type AppState, type ReviewComment } from "./reducer";
 
 const AUTOSAVE_DELAY_MS = 600;
 const SESSION_DEBOUNCE_MS = 1000;
 const TICK_MS = 1000;
 const SUBMIT_DELAY_MS = 150;
+/** How long the pane's "Saved to session notes" message, and its Undo, stay. */
+const NOTE_TOAST_MS = 6000;
 
 export interface AppActions {
   setTab(tab: "terminals" | "notes"): void;
@@ -74,6 +86,13 @@ export interface AppActions {
   newTerminalIn(from: TerminalId, cwd: string): Promise<void>;
   /** Types a cd into the pane's shell, moving it into `path`. */
   changeDirectory(id: TerminalId, path: string): Promise<void>;
+  /**
+   * Adds a worktree for `branch` to the pane's repository and opens a pane in
+   * it. Throws (an AppError) when git refuses, so the form can say why.
+   */
+  createWorktree(id: TerminalId, branch: string): Promise<void>;
+  /** Asks, then deletes a linked worktree's folder; the branch stays. */
+  removeWorktree(id: TerminalId, worktree: WorktreeChip): Promise<void>;
   closeTerminal(id: TerminalId): Promise<void>;
   restartTerminal(id: TerminalId): Promise<void>;
   focusTerminal(id: TerminalId): void;
@@ -109,6 +128,27 @@ export interface AppActions {
   forgetComments(repoRoot: string, paths: string[]): void;
   /** Types the pending comments (and a note) into the pane's agent and submits them. */
   sendReview(id: TerminalId, commentIds: string[], note: string): Promise<boolean>;
+
+  /** Every file of the pane's repository, for the edit tree. */
+  repoFiles(id: TerminalId): Promise<string[]>;
+
+  /** Saves the pane's selection as a note linked to its session (design turn 7). */
+  saveSelection(id: TerminalId): Promise<void>;
+  /** Copies the pane's selection to the clipboard. */
+  copySelection(id: TerminalId): Promise<void>;
+  /** Takes the last saved note back: the file goes to the bin, the link goes. */
+  undoSavedNote(): Promise<void>;
+  dismissNoteToast(): void;
+  /**
+   * A blank note in the pane repository's notes folder, opened in the Notes
+   * tab. Written by hand, so it belongs to the folder, not to the session.
+   */
+  newFolderNote(id: TerminalId): Promise<void>;
+  /** Renames a note of the folder: its heading, its file name and any link to it. */
+  renameFolderNote(relPath: string, title: string): Promise<void>;
+  /** Switches to the Notes tab with this note open. */
+  openInNotes(relPath: string): Promise<void>;
+  readNote(relPath: string): Promise<string>;
 
   saveConfig(patch: Partial<Config>): Promise<void>;
   chooseNotesRoot(): Promise<string | null>;
@@ -213,15 +253,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
             infos,
             focusedId: focusedIndex === -1 ? null : (infos[focusedIndex]?.id ?? null),
             page: session.page,
+            links: session.terminals.map((saved) => saved.notes ?? []),
           });
           for (const info of infos) void refreshGit(info.id);
         }
 
         if (session?.notes.openRelPath) void openNoteInternal(session.notes.openRelPath);
+        dispatch({ type: "booted" });
       } catch (error) {
         // A missing backend is fatal for the terminal surface, but the shell
         // should still render so the user sees why.
         dispatch({ type: "ready", config: stateRef.current.config, session: null });
+        dispatch({ type: "booted" });
         fail(error);
       }
     })();
@@ -367,6 +410,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => window.clearTimeout(timer);
   }, [sessionKey, state.ready]);
 
+  // The saved note message goes away by itself.
+  useEffect(() => {
+    const toast = state.noteToast;
+    if (!toast) return;
+    const timer = window.setTimeout(() => {
+      if (stateRef.current.noteToast === toast) dispatch({ type: "notes/toast", toast: null });
+    }, NOTE_TOAST_MS);
+    return () => window.clearTimeout(timer);
+  }, [state.noteToast]);
+
   // Notes autosave -------------------------------------------------------
 
   const writeNote = useCallback(async () => {
@@ -506,6 +559,64 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     };
 
+    /**
+     * Creates `<repo>/<slug>.md` for the pane's repository. `copiedFrom` names
+     * who wrote text copied out of the terminal, and links the note to the
+     * session; a note written by hand has none.
+     */
+    const createRepoNote = async (id: TerminalId, title: string, body: string, copiedFrom: string | null) => {
+      const term = stateRef.current.terminals[id];
+      if (!term) return null;
+      const repo = term.git?.repoName ?? basename(term.info.cwd);
+      const taken = new Set(flattenPaths(stateRef.current.notes.tree));
+      const wanted = uniqueNotePath(folderFor(repo), slugFrom(title), taken);
+      const node = await call("notes_create", { relPath: wanted, kind: "file" });
+      await call("notes_write", { relPath: node.relPath, content: noteContent(title, body) });
+      await refreshTree();
+      const at = Date.now();
+      if (copiedFrom) {
+        dispatch({
+          type: "notes/link-add",
+          id,
+          link: { relPath: node.relPath, title, source: copiedFrom, branch: term.git?.branch ?? null, at },
+        });
+      }
+      return { relPath: node.relPath, at };
+    };
+
+    /**
+     * A focus hotkey: moves the ring like the reducer always did, and also
+     * hands the keyboard to the terminal it lands on, as a click does. Focus
+     * mode keeps the keyboard in its review panel.
+     */
+    const focusVia = (action: Action) => {
+      const before = stateRef.current.focusedId;
+      const after = reducer(stateRef.current, action);
+      dispatch(action);
+      const id = after.focusedId;
+      if (!id) return;
+      if (!after.focusMode) {
+        // After the render, once the pane's page is the visible one.
+        window.setTimeout(() => terminalRegistry.focus(id), 0);
+      }
+      if (id !== before) {
+        void call("set_focused_terminal", { id }).catch(() => {});
+        void refreshGit(id);
+      }
+    };
+
+    const openInNotes = async (relPath: string) => {
+      dispatch({ type: "tab/set", tab: "notes" });
+      const expanded = stateRef.current.notes.expanded;
+      const parts = relPath.split("/").slice(0, -1);
+      for (let index = 1; index <= parts.length; index++) {
+        const folder = parts.slice(0, index).join("/");
+        if (!expanded.includes(folder)) dispatch({ type: "notes/toggle-folder", relPath: folder });
+      }
+      await writeNote();
+      await openNoteInternal(relPath);
+    };
+
     return {
       setTab: (tab) => dispatch({ type: "tab/set", tab }),
       setLayoutMode: (mode) => dispatch({ type: "layout/set", mode }),
@@ -539,6 +650,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
           fail(error);
         }
         terminalRegistry.focus(id);
+      },
+
+      createWorktree: async (id, branch) => {
+        const path = await call("worktree_create", { id, branch });
+        await spawn(path, true, id);
+      },
+
+      removeWorktree: async (id, worktree) => {
+        const confirmed = await ask(
+          worktree.prunable
+            ? `The folder ${worktree.key} is already gone. This clears git's record of it.`
+            : `Deletes the folder ${worktree.key}. Its branch and commits stay in the repository.`,
+          { title: "Remove worktree?", kind: "warning", okLabel: "Remove", cancelLabel: "Keep it" },
+        );
+        if (!confirmed) return;
+        try {
+          await call("worktree_remove", { id, path: worktree.key });
+        } catch (error) {
+          fail(error);
+        }
       },
 
       closeTerminal: async (id) => {
@@ -682,9 +813,87 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       },
 
-      focusIndex: (index) => dispatch({ type: "terminal/focus-index", index }),
+      repoFiles: (id) => call("review_files", { id }),
+
+      saveSelection: async (id) => {
+        const term = stateRef.current.terminals[id];
+        const note = noteFromSelection(terminalRegistry.selection(id));
+        if (!term || !note) return;
+        try {
+          const source = term.agent?.name ?? term.finished?.name ?? "Terminal";
+          const saved = await createRepoNote(id, note.title, note.body, source);
+          if (!saved) return;
+          terminalRegistry.clearSelection(id);
+          dispatch({ type: "notes/toast", toast: { paneId: id, relPath: saved.relPath, at: saved.at } });
+        } catch (error) {
+          fail(error);
+        }
+      },
+
+      copySelection: async (id) => {
+        try {
+          await terminalRegistry.copySelection(id);
+        } catch (error) {
+          fail(error);
+        }
+      },
+
+      undoSavedNote: async () => {
+        const toast = stateRef.current.noteToast;
+        if (!toast) return;
+        dispatch({ type: "notes/toast", toast: null });
+        try {
+          await call("notes_delete", { relPath: toast.relPath, force: true });
+        } catch (error) {
+          fail(error);
+          return;
+        }
+        if (stateRef.current.notes.openPath === toast.relPath) dispatch({ type: "notes/closed" });
+        dispatch({ type: "notes/link-remove", relPath: toast.relPath });
+        await refreshTree();
+      },
+
+      dismissNoteToast: () => dispatch({ type: "notes/toast", toast: null }),
+
+      newFolderNote: async (id) => {
+        try {
+          const saved = await createRepoNote(id, "Untitled", "", null);
+          if (saved) await openInNotes(saved.relPath);
+        } catch (error) {
+          fail(error);
+        }
+      },
+
+      renameFolderNote: async (relPath, title) => {
+        const trimmed = title.trim();
+        if (!trimmed) return;
+        try {
+          // A dirty buffer of this note reaches disk before its heading is rewritten.
+          if (stateRef.current.notes.openPath === relPath) await writeNote();
+          const file = await call("notes_read", { relPath });
+          const { body } = splitHeading(file.content);
+          await call("notes_write", { relPath, content: noteContent(trimmed, body.replace(/\n+$/, "")) });
+
+          const folder = relPath.includes("/") ? relPath.slice(0, relPath.lastIndexOf("/")) : "";
+          const taken = new Set(flattenPaths(stateRef.current.notes.tree));
+          taken.delete(relPath);
+          const wanted = uniqueNotePath(folder, slugFrom(trimmed), taken);
+          const target = wanted === relPath ? relPath : (await call("notes_rename", { relPath, newRelPath: wanted })).relPath;
+          dispatch({ type: "notes/link-moved", from: relPath, to: target, title: trimmed });
+          await refreshTree();
+          if (stateRef.current.notes.openPath === relPath) await openNoteInternal(target);
+        } catch (error) {
+          fail(error);
+        }
+      },
+
+      openInNotes,
+
+      readNote: async (relPath) => (await call("notes_read", { relPath })).content,
+
+      focusIndex: (index) => focusVia({ type: "terminal/focus-index", index }),
       movePane: (dir) => dispatch({ type: "terminal/move", dir }),
-      moveFocus: (dir) => dispatch({ type: "terminal/move-focus", dir }),
+      moveFocus: (dir) => focusVia({ type: "terminal/move-focus", dir }),
 
       saveConfig: async (patch) => {
         try {
@@ -798,6 +1007,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (newRelPath === relPath) return;
         try {
           const node = await call("notes_rename", { relPath, newRelPath });
+          dispatch({ type: "notes/link-moved", from: relPath, to: node.relPath });
           await refreshTree();
           if (stateRef.current.notes.openPath === relPath) await openNoteInternal(node.relPath);
         } catch (error) {
@@ -817,6 +1027,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         try {
           await call("notes_delete", { relPath, force: true });
           if (stateRef.current.notes.openPath === relPath) dispatch({ type: "notes/closed" });
+          if (kind === "file") dispatch({ type: "notes/link-remove", relPath });
           await refreshTree();
         } catch (error) {
           fail(error);

@@ -31,7 +31,9 @@ export type HotkeyAction =
   | { type: "cycle-layout" }
   | { type: "notes-toggle"; panel: "tree" | "preview" }
   | { type: "toggle-fullscreen" }
-  | { type: "toggle-review" };
+  | { type: "toggle-review" }
+  /** Saves the focused terminal's selection as a session note (design turn 7). */
+  | { type: "save-note" };
 
 /** The configured modifier pair on Windows and Linux, or the Command layout on macOS. */
 export type HotkeyScheme = HotkeyModifier | "mac";
@@ -139,6 +141,8 @@ function matchChord(event: HotkeyEventLike, modifier: HotkeyModifier): HotkeyAct
       return { type: "notes-toggle", panel: "tree" };
     case "KeyP":
       return { type: "notes-toggle", panel: "preview" };
+    case "KeyS":
+      return { type: "save-note" };
     case "Comma":
       return { type: "open-settings" };
     case "Enter":
@@ -197,6 +201,8 @@ function matchMac(event: HotkeyEventLike): HotkeyAction | null {
       return { type: "notes-toggle", panel: "tree" };
     case "KeyP":
       return { type: "notes-toggle", panel: "preview" };
+    case "KeyS":
+      return { type: "save-note" };
     case "Comma":
       return { type: "open-settings" };
     case "Enter":
@@ -230,7 +236,11 @@ export type ShortcutName =
   /** Submitting a comment or the review tray. */
   | "submit"
   /** Saving in the review editor. */
-  | "save";
+  | "save"
+  /** Saving the terminal selection as a note. */
+  | "save-note"
+  /** Copying the terminal selection. */
+  | "copy";
 
 const MAC_LABELS: Record<ShortcutName, string> = {
   "new-pane": "⌘N",
@@ -251,6 +261,8 @@ const MAC_LABELS: Record<ShortcutName, string> = {
   fullscreen: "⌃⌘F",
   submit: "⌘↩",
   save: "⌘S",
+  "save-note": "⌘S",
+  copy: "⌘C",
 };
 
 function chordLabels(modifier: HotkeyModifier): Record<ShortcutName, string> {
@@ -275,6 +287,8 @@ function chordLabels(modifier: HotkeyModifier): Record<ShortcutName, string> {
     fullscreen: "F11",
     submit: "Ctrl+Enter",
     save: "Ctrl+S",
+    "save-note": `${mod}+S`,
+    copy: "Ctrl+C",
   };
 }
 
@@ -307,6 +321,7 @@ export function hotkeyHints(scheme: HotkeyScheme): HotkeyHint[] {
     { label: "Focus pane 1–9", key: key("focus-index") },
     { label: "Previous / next page", key: key("page") },
     { label: "Focus + review", key: key("toggle-review") },
+    { label: "Save selection to note", key: key("save-note") },
     { label: "Notes / Terminals", key: key("toggle-tab") },
     { label: "Notes: hide / show list, preview", key: key("notes-panels") },
     { label: "Settings", key: key("settings") },

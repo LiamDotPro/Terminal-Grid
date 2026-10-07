@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { matchesAgentPattern, parseOsc7, parseOsc133, parseOsc7777 } from "./osc";
+import { matchesAgentPattern, parseOsc7, parseOsc52, parseOsc133, parseOsc7777 } from "./osc";
 
 describe("parseOsc7", () => {
   it("reads a Windows path", () => {
@@ -56,6 +56,22 @@ describe("parseOsc7777", () => {
   it("rejects a different sub-command or broken base64", () => {
     expect(parseOsc7777(`other;${encode("x")}`)).toBeNull();
     expect(parseOsc7777("cmd")).toBeNull();
+  });
+});
+
+describe("parseOsc52", () => {
+  const encode = (value: string) =>
+    btoa(String.fromCharCode(...new TextEncoder().encode(value)));
+
+  it("decodes the text a program put on the clipboard", () => {
+    expect(parseOsc52(`c;${encode("Selected — text")}`)).toBe("Selected — text");
+  });
+
+  it("ignores read requests, empty writes and missing targets", () => {
+    expect(parseOsc52("c;?")).toBeNull();
+    expect(parseOsc52("c;")).toBeNull();
+    expect(parseOsc52(`c;${encode("   ")}`)).toBeNull();
+    expect(parseOsc52("nothing")).toBeNull();
   });
 });
 

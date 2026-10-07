@@ -1,7 +1,7 @@
 import type { ITheme } from "@xterm/xterm";
 
 /** The theme actually on screen once "system" is resolved. */
-export type ResolvedTheme = "light" | "dark" | "black";
+export type ResolvedTheme = "light" | "dark" | "black" | "glass";
 
 /**
  * xterm palette. The eight base colours are the ones the design uses for

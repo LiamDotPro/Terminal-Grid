@@ -1,6 +1,6 @@
 import { LAYOUT_MODES, pageSlice, type LayoutMode } from "../ipc/layout";
 import { cx } from "../lib/cx";
-import { focusPaneLabel, shortcutLabel } from "../lib/hotkeys";
+import { focusPaneLabel, IS_MAC, shortcutLabel } from "../lib/hotkeys";
 import type { WindowFrame } from "../lib/windowFrame";
 import { useAppActions, useAppState, useHotkeyScheme } from "../state/AppProvider";
 import { totalPages } from "../state/reducer";
@@ -12,8 +12,10 @@ const LAYOUT_LABELS: Record<LayoutMode, string> = {
 };
 
 /**
- * The title bar version of the app icon (src-tauri/icons/app-icon.svg): a 2x2
- * pane grid with the active pane lit and carrying the prompt chevron.
+ * The title bar version of the app icon (src-tauri/icons/app-icon.html), drawn
+ * from its flat small-size variant: three skewed panes, violet at the back,
+ * cyan in the middle, a dark pane with a white rim in front. Coordinates are
+ * the icon's 1024 artboard, scaled down to 18px.
  */
 function BrandMark() {
   return (
@@ -26,25 +28,25 @@ function BrandMark() {
       focusable="false"
     >
       <defs>
-        <linearGradient id="brand-accent" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#8ddcff" />
-          <stop offset="1" stopColor="#c8b6ff" />
+        <linearGradient id="brand-front" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#2c3d62" />
+          <stop offset="1" stopColor="#141a30" />
         </linearGradient>
       </defs>
-      <g fill="none" stroke="currentColor" strokeWidth="1.25">
-        <rect x="10.125" y="0.625" width="7.25" height="7.25" rx="2" />
-        <rect x="0.625" y="10.125" width="7.25" height="7.25" rx="2" />
-        <rect x="10.125" y="10.125" width="7.25" height="7.25" rx="2" />
+      <g transform="translate(9 9) scale(0.0225) translate(-12 -50) skewY(-9) translate(-448 -448)">
+        <rect x="430" y="150" width="330" height="520" rx="72" fill="#7a5cf0" />
+        <rect x="310" y="220" width="340" height="540" rx="72" fill="#2fb8ea" />
+        <rect
+          x="192"
+          y="322"
+          width="316"
+          height="496"
+          rx="48"
+          fill="url(#brand-front)"
+          stroke="#eefaff"
+          strokeWidth="64"
+        />
       </g>
-      <rect x="0" y="0" width="8.5" height="8.5" rx="2.4" fill="url(#brand-accent)" />
-      <path
-        d="M2.9 2.75l2.1 1.5-2.1 1.5"
-        fill="none"
-        stroke="#0b0f1c"
-        strokeWidth="1.3"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
     </svg>
   );
 }
@@ -107,6 +109,12 @@ function MaximizeGlyph({ restore = false }: { restore?: boolean }) {
  * The window bar: brand, tab switcher, pager, pane/hotkey/settings actions and
  * the window controls. It is also the drag region, so the app can run without
  * native decorations the way the design draws it.
+ *
+ * On macOS the window keeps its native frame with the title bar overlaid
+ * (tauri.macos.conf.json), so the traffic lights sit in this bar the way they
+ * do in WebStorm: the bar makes room for them and drops its own minimize,
+ * maximize and close. Full screen keeps them in the bar too, WebStorm style
+ * (src-tauri/src/traffic_lights.rs), with the green one leaving full screen.
  */
 export function Chrome({ frame }: { frame: WindowFrame }) {
   const state = useAppState();
@@ -120,9 +128,10 @@ export function Chrome({ frame }: { frame: WindowFrame }) {
   // Nothing to drag while fullscreen, and a double-click there would maximize
   // the window underneath without anything visibly changing.
   const dragRegion = fullscreen ? undefined : "";
+  const trafficLights = IS_MAC;
 
   return (
-    <header className="chrome" data-tauri-drag-region={dragRegion}>
+    <header className={cx("chrome", trafficLights && "chrome--traffic-lights")} data-tauri-drag-region={dragRegion}>
       <div className="chrome__brand" data-tauri-drag-region={dragRegion}>
         <BrandMark />
         {inFocus ? <FocusPills /> : <span className="chrome__title">Terminal Grid</span>}
@@ -236,58 +245,60 @@ export function Chrome({ frame }: { frame: WindowFrame }) {
           Settings
         </button>
 
-        <span className="chrome__divider" aria-hidden="true" />
+        {!trafficLights && <span className="chrome__divider" aria-hidden="true" />}
 
-        <div className="winbtns">
-          <button
-            type="button"
-            className="winbtn"
-            aria-label="Minimize"
-            onClick={() => void actions.minimize()}
-          >
-            —
-          </button>
-          {fullscreen ? (
+        {!trafficLights && (
+          <div className="winbtns">
             <button
               type="button"
-              className="winbtn winbtn--fullscreen"
-              title="Exit full screen (F11)"
-              onClick={() => void actions.toggleFullscreen()}
+              className="winbtn"
+              aria-label="Minimize"
+              onClick={() => void actions.minimize()}
             >
-              <FullscreenGlyph exit />
-              Full screen
+              —
             </button>
-          ) : (
-            <>
+            {fullscreen ? (
               <button
                 type="button"
-                className="winbtn"
-                aria-label="Full screen"
-                title="Full screen (F11)"
+                className="winbtn winbtn--fullscreen"
+                title="Exit full screen (F11)"
                 onClick={() => void actions.toggleFullscreen()}
               >
-                <FullscreenGlyph />
+                <FullscreenGlyph exit />
+                Full screen
               </button>
-              <button
-                type="button"
-                className="winbtn"
-                aria-label={frame === "maximized" ? "Restore" : "Maximize"}
-                title={frame === "maximized" ? "Restore" : "Maximize"}
-                onClick={() => void actions.toggleMaximize()}
-              >
-                <MaximizeGlyph restore={frame === "maximized"} />
-              </button>
-            </>
-          )}
-          <button
-            type="button"
-            className="winbtn winbtn--close"
-            aria-label="Close"
-            onClick={() => void actions.closeWindow()}
-          >
-            ×
-          </button>
-        </div>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="winbtn"
+                  aria-label="Full screen"
+                  title="Full screen (F11)"
+                  onClick={() => void actions.toggleFullscreen()}
+                >
+                  <FullscreenGlyph />
+                </button>
+                <button
+                  type="button"
+                  className="winbtn"
+                  aria-label={frame === "maximized" ? "Restore" : "Maximize"}
+                  title={frame === "maximized" ? "Restore" : "Maximize"}
+                  onClick={() => void actions.toggleMaximize()}
+                >
+                  <MaximizeGlyph restore={frame === "maximized"} />
+                </button>
+              </>
+            )}
+            <button
+              type="button"
+              className="winbtn winbtn--close"
+              aria-label="Close"
+              onClick={() => void actions.closeWindow()}
+            >
+              ×
+            </button>
+          </div>
+        )}
       </div>
     </header>
   );

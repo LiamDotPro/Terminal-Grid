@@ -13,8 +13,6 @@
   position: absolute;
   inset: 0;
   margin: var(--grid-pad);
-  display: grid;
-  gap: var(--grid-gap);
   visibility: hidden;
   pointer-events: none;
   /* Same backdrop-filter caveat as .view in index.css. */
@@ -27,6 +25,68 @@
   transform: none;
 }
 
+/* Panes sit at the row and column sizes PaneGrid computes; a short last row
+   stretches its panes across the page so no cell is left empty. */
+.grid__cell {
+  position: absolute;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+
+.grid__cell > .pane {
+  flex: 1;
+}
+
+/* Drag handles in the gaps between panes; double click evens the track. */
+.grid__divider {
+  position: absolute;
+  z-index: 1;
+  touch-action: none;
+}
+
+.grid__divider--col {
+  width: var(--grid-gap);
+  cursor: col-resize;
+}
+
+.grid__divider--row {
+  left: 0;
+  right: 0;
+  height: var(--grid-gap);
+  cursor: row-resize;
+}
+
+.grid__divider::after {
+  content: "";
+  position: absolute;
+  border-radius: 1px;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.grid__divider--col::after {
+  top: 12px;
+  bottom: 12px;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+}
+
+.grid__divider--row::after {
+  left: 12px;
+  right: 12px;
+  top: 50%;
+  height: 2px;
+  transform: translateY(-50%);
+}
+
+.grid__divider:hover::after,
+.grid__divider:active::after {
+  opacity: 0.6;
+}
+
 .pane {
   position: relative;
   display: flex;
@@ -35,6 +95,10 @@
   min-height: 0;
   border-radius: var(--radius-pane);
   overflow: hidden;
+  /* A hidden overflow can still be scrolled from code, and WebKit scrolls it to
+     reveal xterm's input when the terminal takes focus: the body jumped up a
+     few pixels on click. clip cannot be scrolled at all. */
+  overflow: clip;
   background: var(--glass-pane);
   backdrop-filter: var(--glass-blur);
   border: 1px solid var(--edge);
@@ -48,8 +112,8 @@
 }
 
 .pane--focused {
-  border-color: var(--accent);
-  outline-color: var(--accent);
+  border-color: rgb(var(--focus-rgb));
+  outline-color: rgb(var(--focus-rgb));
   box-shadow: var(--ring-focus);
 }
 
@@ -62,8 +126,8 @@
 @keyframes pane-finished {
   from {
     box-shadow:
-      0 0 0 10px rgb(var(--ok-rgb) / 0),
-      0 0 60px rgb(var(--ok-rgb) / 0.65),
+      0 0 0 10px rgb(var(--finished-rgb) / 0),
+      0 0 60px rgb(var(--finished-rgb) / 0.65),
       0 20px 50px rgb(0 0 0 / calc(0.45 * var(--shadow-k))),
       inset 0 1px 0 rgb(var(--ink-rgb) / 0.12);
   }
@@ -221,11 +285,18 @@
   color: var(--text-70);
 }
 
+/* The running agent, shown by its mark in its brand colour. */
 .pane__chip--agent {
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  display: inline-grid;
+  place-items: center;
+  padding: 3px 7px;
   background: var(--agent-other-bg);
   color: var(--agent-other-fg);
+}
+
+.pane__chip--agent .agent-icon {
+  display: block;
+  color: var(--agent-brand, currentColor);
 }
 
 .pane__chip--agent-claude {
@@ -383,6 +454,82 @@
   flex: none;
 }
 
+.pane__worktree-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.pane__worktree-row .pane__worktree-item {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Remove: quiet until the row is hovered, like the header buttons. */
+.pane__worktree-remove {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--text-40);
+  opacity: 0;
+  transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease;
+}
+
+.pane__worktree-row:hover .pane__worktree-remove,
+.pane__worktree-remove:focus-visible {
+  opacity: 1;
+}
+
+.pane__worktree-remove:hover {
+  background: var(--fill-hover);
+  color: var(--text-strong);
+}
+
+.pane__menu-rule {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--edge-strong);
+}
+
+.pane__worktree-new {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 2px 4px 4px;
+}
+
+.pane__worktree-input {
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 7px;
+  border: 1px solid var(--edge-strong);
+  background: var(--fill-1);
+  color: var(--text-strong);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  outline: none;
+}
+
+.pane__worktree-input:focus {
+  border-color: var(--accent);
+}
+
+.pane__worktree-note {
+  padding: 0 4px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-45);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.pane__worktree-note--error {
+  color: var(--danger);
+}
+
 /* Agent task (design section 5.5) -------------------------------------- */
 
 .pane__task-toggle {
@@ -406,21 +553,38 @@
 }
 
 /* Agent launchers: quiet until hovered, so an idle header stays calm. */
+/* Agent launchers are brand marks (AgentIcon), greyed out until hovered or
+   focused, when they take the brand colour. */
 .pane__launch {
   flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
   height: 20px;
-  padding: 0 6px;
+  padding: 0;
   border-radius: 6px;
   border: 1px solid transparent;
-  font-size: 11px;
   color: var(--text-55);
   transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
 }
 
-.pane__launch:hover {
+.pane__launch .agent-icon {
+  display: block;
+  filter: grayscale(1);
+  opacity: 0.6;
+  transition: filter 120ms ease, opacity 120ms ease, color 120ms ease;
+}
+
+.pane__launch:is(:hover, :focus-visible) {
   background: var(--fill-hover);
   border-color: rgb(var(--ink-rgb) / 0.12);
   color: var(--text-strong);
+}
+
+.pane__launch:is(:hover, :focus-visible) .agent-icon {
+  filter: none;
+  opacity: 1;
+  color: var(--agent-brand, currentColor);
 }
 
 /* Once reported, the task is a single quiet line under the header's first
@@ -551,6 +715,7 @@
   min-height: 0;
   padding: 10px 12px;
   overflow: hidden;
+  overflow: clip;
 }
 
 .xterm-host {
@@ -683,4 +848,119 @@
   font-size: 11px;
   color: var(--text-45);
   margin-top: 4px;
+}
+
+/* Selection menu and the saved note message (Terminal Grid.dc.html turn 7) */
+
+.pane__selection-menu {
+  position: absolute;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 11px;
+  background: var(--glass-sheet);
+  backdrop-filter: var(--glass-blur-pop);
+  border: 1px solid rgb(var(--ink-rgb) / 0.18);
+  box-shadow: 0 14px 36px rgb(0 0 0 / calc(0.5 * var(--shadow-k))), inset 0 1px 0 rgb(var(--ink-rgb) / 0.14);
+  white-space: nowrap;
+}
+
+.pane__selection-item {
+  height: 28px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--text-90);
+}
+
+.pane__selection-item:hover {
+  background: var(--fill-hover);
+  color: var(--text-strong);
+}
+
+.pane__selection-item--save {
+  background: rgb(var(--accent-rgb) / 0.22);
+  box-shadow: inset 0 0 0 1px rgb(var(--accent-rgb) / 0.5);
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.pane__selection-item--save:hover {
+  background: rgb(var(--accent-rgb) / 0.32);
+}
+
+.pane__selection-key {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--text-50);
+}
+
+.pane__selection-item--save .pane__selection-key {
+  color: rgb(var(--accent-rgb) / 0.85);
+}
+
+.pane__toast {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 3;
+  max-width: calc(100% - 24px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 6px 0 10px;
+  border-radius: 9px;
+  background: var(--glass-sheet);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgb(var(--ok-rgb) / 0.45);
+  box-shadow: 0 10px 30px rgb(0 0 0 / calc(0.4 * var(--shadow-k)));
+  font-size: 12px;
+  color: var(--ok-soft);
+  white-space: nowrap;
+  animation: pane-toast-in 160ms ease-out;
+}
+
+@keyframes pane-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.pane__toast-check {
+  color: var(--ok);
+}
+
+.pane__toast-file {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+.pane__toast-rule {
+  flex: none;
+  width: 1px;
+  height: 14px;
+  background: rgb(var(--ink-rgb) / 0.14);
+}
+
+.pane__toast-undo {
+  flex: none;
+  padding: 2px 6px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.pane__toast-undo:hover {
+  background: rgb(var(--ink-rgb) / 0.12);
 }

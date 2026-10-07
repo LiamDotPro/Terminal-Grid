@@ -19,7 +19,8 @@ export type Inline =
 export type Block =
   | { type: "heading"; level: 1 | 2 | 3 | 4 | 5 | 6; children: Inline[] }
   | { type: "paragraph"; children: Inline[] }
-  | { type: "list"; ordered: boolean; start: number; items: Block[][] }
+  /** `tasks[i]` is the checkbox of item i (`- [x] done`), null for a plain item. */
+  | { type: "list"; ordered: boolean; start: number; items: Block[][]; tasks: (boolean | null)[] }
   | { type: "quote"; children: Block[] }
   | { type: "code"; lang: string | null; value: string }
   | { type: "rule" };
@@ -30,6 +31,8 @@ const RULE = /^(?:-{3,}|\*{3,}|_{3,})\s*$/;
 const BULLET = /^(\s*)[-*+]\s+(.*)$/;
 const ORDERED = /^(\s*)(\d{1,9})[.)]\s+(.*)$/;
 const QUOTE = /^\s{0,3}>\s?(.*)$/;
+/** A GitHub task list marker at the start of an item: `[ ]`, `[x]` or `[X]`. */
+const TASK = /^\[([ xX])\](?:\s+|$)/;
 
 export function parseMarkdown(source: string): Block[] {
   return parseBlocks(source.replace(/\r\n?/g, "\n").split("\n"));
@@ -118,6 +121,7 @@ function parseList(lines: string[], from: number): [Block, number] {
   const ordered = first !== null;
   const start = ordered ? Number(first[2]) : 1;
   const items: Block[][] = [];
+  const tasks: (boolean | null)[] = [];
   let i = from;
   let current: string[] | null = null;
 
@@ -133,7 +137,10 @@ function parseList(lines: string[], from: number): [Block, number] {
 
     if (bullet && bullet[1].length < 2) {
       flush();
-      current = [ordered ? bullet[3] : bullet[2]];
+      const text = ordered ? bullet[3] : bullet[2];
+      const task = TASK.exec(text);
+      tasks.push(task ? task[1] !== " " : null);
+      current = [task ? text.slice(task[0].length) : text];
       i++;
       continue;
     }
@@ -161,7 +168,7 @@ function parseList(lines: string[], from: number): [Block, number] {
   }
 
   flush();
-  return [{ type: "list", ordered, start, items }, i];
+  return [{ type: "list", ordered, start, items, tasks }, i];
 }
 
 const INLINE = /(`+)([\s\S]*?)\1|(\*\*|__)([\s\S]+?)\3|(\*|_)([\s\S]+?)\5|~~([\s\S]+?)~~|\[([^\]]*)\]\(([^()\s]*)\)/;

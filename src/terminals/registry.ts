@@ -13,7 +13,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import type { Config, TerminalId } from "../ipc/types";
 import { IS_MAC, hotkeyScheme, isModifierHeld, type HotkeyScheme } from "../lib/hotkeys";
 import { clipboardIntent } from "./clipboard";
-import { parseOsc7, parseOsc133, parseOsc7777 } from "./osc";
+import { parseOsc7, parseOsc52, parseOsc133, parseOsc7777 } from "./osc";
 import { terminalTheme, type ResolvedTheme } from "./theme";
 
 export interface RegistryCallbacks {
@@ -28,6 +28,21 @@ export interface RegistryCallbacks {
   onFocus(id: TerminalId): void;
 }
 
+/**
+ * Where a mouse selection was released, in client coordinates, or null when
+ * the selection menu should go away (design turn 7).
+ */
+export type SelectionPoint = { x: number; y: number } | null;
+type SelectionListener = (at: SelectionPoint) => void;
+
+/**
+ * How long after the mouse is released a program's clipboard write still
+ * counts as copying what was just selected.
+ */
+const PROGRAM_SELECTION_WINDOW_MS = 1500;
+
+const MODIFIER_KEYS = new Set(["Control", "Alt", "Shift", "Meta", "AltGraph", "CapsLock"]);
+
 interface Entry {
   term: Terminal;
   fit: FitAddon;
@@ -37,6 +52,14 @@ interface Entry {
   lastOutputAt: number;
   cols: number;
   rows: number;
+  /** Where and when the left button last came up, for an OSC 52 copy that follows. */
+  release: { at: { x: number; y: number }; time: number } | null;
+  /**
+   * Text selected inside a program that tracks the mouse itself, as Claude
+   * Code does: xterm holds no selection then, the program draws its own and
+   * copies it out with OSC 52.
+   */
+  programSelection: string | null;
 }
 
 const NOOP_CALLBACKS: RegistryCallbacks = {
@@ -63,6 +86,7 @@ export class TerminalRegistry {
    */
   private readonly early = new Map<TerminalId, Uint8Array[]>();
   private readonly disposed = new Set<TerminalId>();
+  private readonly selectionListeners = new Map<TerminalId, SelectionListener>();
   private callbacks: RegistryCallbacks = NOOP_CALLBACKS;
   private scheme: HotkeyScheme = hotkeyScheme("ctrl+alt");
   private theme: ResolvedTheme = "dark";
@@ -133,7 +157,10 @@ export class TerminalRegistry {
     // xterm must never swallow the app chord (design section 6), and the
     // system clipboard keys go to the browser so paste and copy just work.
     term.attachCustomKeyEventHandler((event) => {
+      // Typing puts the selection menu away; the selection itself stays.
+      if (event.type === "keydown" && !MODIFIER_KEYS.has(event.key)) this.emitSelection(id, null);
       if (isModifierHeld(event, this.scheme)) return false;
+      if (event.type === "keydown" && !MODIFIER_KEYS.has(event.key)) entry.programSelection = null;
       const intent = clipboardIntent(event, term.hasSelection(), IS_MAC);
       if (!intent) return true;
       if (intent.kind === "copy" && event.type === "keydown") {
@@ -148,9 +175,21 @@ export class TerminalRegistry {
       term.onData((data) => this.callbacks.onData(id, data)),
       term.onBinary((data) => this.callbacks.onData(id, data)),
       term.onBell(() => this.callbacks.onBell(id)),
+      term.onSelectionChange(() => {
+        if (!term.hasSelection()) this.emitSelection(id, null);
+      }),
       term.parser.registerOscHandler(7, (payload) => {
         const cwd = parseOsc7(payload);
         if (cwd) this.callbacks.onCwd(id, cwd);
+        return true;
+      }),
+      term.parser.registerOscHandler(52, (payload) => {
+        const text = parseOsc52(payload);
+        const release = entry.release;
+        if (text && release && Date.now() - release.time < PROGRAM_SELECTION_WINDOW_MS) {
+          entry.programSelection = text;
+          this.emitSelection(id, release.at);
+        }
         return true;
       }),
       term.parser.registerOscHandler(133, (payload) => {
@@ -167,6 +206,19 @@ export class TerminalRegistry {
     ];
 
     host.addEventListener("focusin", () => this.callbacks.onFocus(id));
+    // Releasing a drag (or a double click) that left text selected offers the
+    // selection menu where the mouse let go.
+    host.addEventListener("mousedown", (event) => {
+      if (event.button === 0) entry.programSelection = null;
+    });
+    host.addEventListener("mouseup", (event) => {
+      if (event.button !== 0) return;
+      const at = { x: event.clientX, y: event.clientY };
+      entry.release = { at, time: Date.now() };
+      window.setTimeout(() => {
+        if (term.hasSelection() && term.getSelection().trim()) this.emitSelection(id, at);
+      }, 0);
+    });
 
     const entry: Entry = {
       term,
@@ -177,6 +229,8 @@ export class TerminalRegistry {
       lastOutputAt: Date.now(),
       cols: term.cols,
       rows: term.rows,
+      release: null,
+      programSelection: null,
     };
     entry.observer.observe(host);
     this.entries.set(id, entry);
@@ -217,6 +271,36 @@ export class TerminalRegistry {
     if (!entry?.term.modes.bracketedPasteMode) return false;
     entry.term.paste(text);
     return true;
+  }
+
+  /** The selection menu of one pane listens here; returns the unsubscribe. */
+  onSelectionMenu(id: TerminalId, listener: SelectionListener): () => void {
+    this.selectionListeners.set(id, listener);
+    return () => {
+      if (this.selectionListeners.get(id) === listener) this.selectionListeners.delete(id);
+    };
+  }
+
+  /** The selected text, empty when there is none. */
+  selection(id: TerminalId): string {
+    const entry = this.entries.get(id);
+    if (!entry) return "";
+    return entry.term.getSelection() || entry.programSelection || "";
+  }
+
+  clearSelection(id: TerminalId): void {
+    const entry = this.entries.get(id);
+    entry?.term.clearSelection();
+    if (entry) entry.programSelection = null;
+    this.emitSelection(id, null);
+  }
+
+  /** Copies the selection to the system clipboard and drops it, as Ctrl+C does. */
+  async copySelection(id: TerminalId): Promise<void> {
+    const text = this.selection(id);
+    if (!text) return;
+    await navigator.clipboard.writeText(text);
+    this.clearSelection(id);
   }
 
   /** Clears the screen and scrollback, used when a session is restarted. */
@@ -266,6 +350,7 @@ export class TerminalRegistry {
 
   dispose(id: TerminalId): void {
     this.early.delete(id);
+    this.selectionListeners.delete(id);
     this.disposed.add(id);
     const entry = this.entries.get(id);
     if (!entry) return;
@@ -278,6 +363,10 @@ export class TerminalRegistry {
 
   disposeAll(): void {
     for (const id of [...this.entries.keys()]) this.dispose(id);
+  }
+
+  private emitSelection(id: TerminalId, at: SelectionPoint): void {
+    this.selectionListeners.get(id)?.(at);
   }
 
   private hold(id: TerminalId, data: Uint8Array): void {

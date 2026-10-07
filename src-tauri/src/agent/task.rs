@@ -189,7 +189,10 @@ mod tests {
 
     #[test]
     fn a_utf8_bom_is_dropped() {
-        assert_eq!(parse_task(b"\xEF\xBB\xBFWiring IPC").as_deref(), Some("Wiring IPC"));
+        assert_eq!(
+            parse_task(b"\xEF\xBB\xBFWiring IPC").as_deref(),
+            Some("Wiring IPC")
+        );
     }
 
     #[test]

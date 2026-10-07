@@ -1,0 +1,120 @@
+/* Startup splash. Splash Animation.dc.html, drawn by Splash.tsx.
+
+   The splash plays over the live app. While .app carries data-splash the app
+   is laid out but its content is hidden: the grid cells wait for their logo
+   pane to land (Splash.tsx sets data-splash-in on each), and the chrome and
+   any non-grid view slide in once the phase turns to "reveal". */
+
+.app[data-splash] .grid__cell {
+  opacity: 0;
+  transition: opacity 450ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.app[data-splash] .grid__cell[data-splash-in] {
+  opacity: 1;
+}
+
+.app[data-splash] .chrome,
+.app[data-splash] .view--active > :not(.grid) {
+  transition:
+    opacity 600ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 600ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.app[data-splash="hold"] .chrome {
+  opacity: 0;
+  transform: translateY(-14px);
+}
+
+.app[data-splash="hold"] .view--active > :not(.grid) {
+  opacity: 0;
+}
+
+/* The splash's wordmark flies up to stand in for the title until it ends. */
+.app[data-splash] .chrome__title {
+  visibility: hidden;
+}
+
+/* The view eases into place as the sessions come up. */
+.app[data-splash="reveal"] .grid {
+  animation: splash-settle 1.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes splash-settle {
+  from {
+    transform: scale(1.012);
+  }
+  to {
+    transform: none;
+  }
+}
+
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  overflow: hidden;
+  font-family: var(--font-ui);
+}
+
+.splash__layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.splash__pane {
+  position: absolute;
+  backface-visibility: hidden;
+  outline: 1px solid transparent;
+  pointer-events: none;
+}
+
+.splash__fill {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.splash__line {
+  position: absolute;
+  transform-origin: 50% 50%;
+  background: rgb(141 220 255 / 0.55);
+  box-shadow: 0 0 12px rgb(141 220 255 / 0.7);
+  pointer-events: none;
+}
+
+.splash__wordmark {
+  position: absolute;
+  font-weight: 600;
+  white-space: nowrap;
+  transform-origin: 0 50%;
+  pointer-events: none;
+}
+
+.splash__bar {
+  position: absolute;
+  height: 3px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: rgb(255 255 255 / 0.1);
+}
+
+.splash__bar-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 2px;
+  background: linear-gradient(90deg, rgb(141 220 255 / 0), #8ddcff 40%, #e6f8ff 60%, rgb(141 220 255 / 0));
+}
+
+.splash__status {
+  position: absolute;
+  left: 0;
+  right: 0;
+  text-align: center;
+  letter-spacing: 0.01em;
+  color: rgb(238 241 246 / 0.62);
+  pointer-events: none;
+}

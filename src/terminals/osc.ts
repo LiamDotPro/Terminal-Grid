@@ -49,6 +49,19 @@ export function parseOsc7777(payload: string): string | null {
   return decodeBase64Utf8(payload.slice(sep + 1));
 }
 
+/**
+ * OSC 52: `<targets>;<base64 utf-8>` — a program setting the clipboard, as
+ * Claude Code does with text selected inside its own mouse-driven view. A `?`
+ * is a read request and carries no text.
+ */
+export function parseOsc52(payload: string): string | null {
+  const sep = payload.indexOf(";");
+  if (sep === -1) return null;
+  const data = payload.slice(sep + 1);
+  if (data === "" || data === "?") return null;
+  return decodeBase64Utf8(data) || null;
+}
+
 /** True when a command line looks like one of the configured agent patterns. */
 export function matchesAgentPattern(commandLine: string, patterns: string[]): string | null {
   const haystack = commandLine.toLowerCase();
